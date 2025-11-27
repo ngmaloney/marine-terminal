@@ -1,0 +1,270 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Mariner TUI is a terminal application for displaying NOAA weather and tide information for US ports. The application retrieves and displays:
+- Current weather and 3-day forecast
+- NOAA wind predictions
+- Wave heights
+- NOAA alerts for the selected port
+- Tide information for next 3 days
+
+The interface uses colored pane views with optional UTF emoji for weather conditions. Users can search for ports by postal code or city/state.
+
+## Technology Stack
+
+- **Language**: Go
+- **TUI Framework**: [Bubble Tea](https://github.com/charmbracelet/bubbletea) - Built on The Elm Architecture
+- **Complementary Libraries**:
+  - [Bubbles](https://github.com/charmbracelet/bubbles) - TUI components (viewports, lists, spinners, etc.)
+  - [Lipgloss](https://github.com/charmbracelet/lipgloss) - Styling and layout
+  - [Harmonica](https://github.com/charmbracelet/harmonica) - Animation utilities
+
+## Project Structure
+
+Follow standard Go project layout:
+```
+mariner-tui/
+├── cmd/
+│   └── mariner-tui/      # Main application entry point
+│       └── main.go
+├── internal/             # Private application code
+│   ├── ui/              # Bubble Tea UI components and models
+│   ├── noaa/            # NOAA API clients
+│   ├── models/          # Data models (Weather, Tide, Alert, etc.)
+│   └── ports/           # Port search and location logic
+├── pkg/                 # Public libraries (if any)
+├── testdata/            # Test fixtures and sample data
+├── go.mod
+├── go.sum
+└── README.md
+```
+
+Use `internal/` for code that should not be imported by external projects. Keep packages focused and cohesive.
+
+## Development Commands
+
+```bash
+# Initialize Go module (if not already done)
+go mod init github.com/ngmaloney/mariner-tui
+
+# Install dependencies
+go mod download
+
+# Build the application
+go build -o mariner-tui ./cmd/mariner-tui
+
+# Run the application
+go run ./cmd/mariner-tui
+
+# Run all tests
+go test ./...
+
+# Run tests with coverage
+go test -cover ./...
+
+# Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+
+# Run a specific test
+go test -run TestName ./path/to/package
+
+# Run tests with race detector
+go test -race ./...
+
+# Format code
+go fmt ./...
+
+# Lint (requires golangci-lint)
+golangci-lint run
+
+# Run tests and build before committing
+go test ./... && go build ./cmd/mariner-tui
+```
+
+## Testing Requirements
+
+**All code must include comprehensive tests.** Follow these practices:
+
+### Test Coverage
+- Write tests for all new functions and methods
+- Target minimum 80% coverage for business logic
+- Use `go test -cover ./...` to verify coverage
+
+### Test Organization
+- Place tests in `*_test.go` files in the same package
+- Use `testdata/` directory for fixtures and sample responses
+- Mock external dependencies (HTTP clients for NOAA APIs)
+
+### Table-Driven Tests
+Use Go's table-driven test pattern for multiple test cases:
+```go
+func TestParseWeatherData(t *testing.T) {
+    tests := []struct {
+        name    string
+        input   []byte
+        want    WeatherData
+        wantErr bool
+    }{
+        {"valid data", validJSON, expectedData, false},
+        {"invalid JSON", invalidJSON, WeatherData{}, true},
+        {"empty response", []byte{}, WeatherData{}, true},
+    }
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            got, err := ParseWeatherData(tt.input)
+            if (err != nil) != tt.wantErr {
+                t.Errorf("ParseWeatherData() error = %v, wantErr %v", err, tt.wantErr)
+                return
+            }
+            if !reflect.DeepEqual(got, tt.want) {
+                t.Errorf("ParseWeatherData() = %v, want %v", got, tt.want)
+            }
+        })
+    }
+}
+```
+
+### Testing Bubble Tea Components
+- Test Update function with various message types
+- Verify Model state transitions
+- Test View rendering for different states (loading, error, success)
+- Use testable interfaces for external dependencies
+
+### Running Tests
+**Always run tests after making changes:**
+1. Run `go test ./...` before committing
+2. Fix any failing tests immediately
+3. Add new tests for bug fixes to prevent regressions
+4. Run with `-race` flag to detect race conditions
+
+## Go Best Practices
+
+### Code Style
+- Follow [Effective Go](https://go.dev/doc/effective_go) guidelines
+- Use `gofmt` to format all code
+- Run `go vet` to catch common mistakes
+- Use meaningful variable names (avoid single-letter names except for short-lived loop variables)
+
+### Error Handling
+- Always check and handle errors; never ignore them
+- Wrap errors with context: `fmt.Errorf("failed to fetch weather data: %w", err)`
+- Return errors rather than panicking in library code
+- Log errors at appropriate levels in the UI layer
+
+### Interfaces and Abstraction
+- Define interfaces where they're used, not where they're implemented
+- Keep interfaces small and focused (prefer many small interfaces)
+- Use interfaces to make code testable (e.g., HTTP client interface for NOAA API)
+
+Example:
+```go
+// internal/noaa/client.go
+type WeatherClient interface {
+    GetForecast(lat, lon float64) (*WeatherData, error)
+    GetAlerts(stationID string) ([]Alert, error)
+}
+
+// Makes testing easier - can mock the interface
+type MockWeatherClient struct {
+    ForecastFunc func(lat, lon float64) (*WeatherData, error)
+}
+```
+
+### Concurrency
+- Use goroutines sparingly and only when needed
+- Always consider goroutine lifecycle and cleanup
+- Use context.Context for cancellation and timeouts
+- Be mindful of race conditions (test with `-race`)
+
+### Dependency Management
+- Keep dependencies minimal
+- Pin versions in `go.mod`
+- Run `go mod tidy` regularly to clean up unused dependencies
+
+## Data Sources
+
+The application integrates with NOAA APIs to retrieve:
+- Weather forecasts and current conditions
+- Wind predictions
+- Wave height data
+- Marine alerts and warnings
+- Tide predictions
+
+When implementing API integrations, ensure proper error handling for network failures and API rate limits. NOAA provides multiple API endpoints (weather.gov API, CO-OPS for tides) that may need to be coordinated.
+
+## Bubble Tea Architecture (The Elm Architecture)
+
+Bubble Tea applications follow The Elm Architecture with three core components:
+
+### Model
+The Model struct holds the complete application state:
+- Current port/location information
+- Weather data, wind predictions, wave heights
+- Tide schedules
+- NOAA alerts
+- UI state (active pane, loading states, error messages)
+- Component models from Bubbles (e.g., viewport, list, spinner)
+
+### Update
+The Update function processes messages (Msgs) and returns an updated Model plus optional Commands:
+- Handle user input (keypresses for navigation, search input)
+- Process API responses (weather data fetched, tide data received)
+- Manage async operations via Commands (tea.Cmd)
+- Update component states (Bubbles components have their own Update methods)
+
+### View
+The View function renders the UI as a string based on the current Model:
+- Use Lipgloss for styling panes and layout
+- Compose multiple pane views (weather, tides, alerts, etc.)
+- Leverage Bubbles components for common UI elements
+- Return the complete rendered string
+
+### Handling Async Data
+
+API calls to NOAA services should be initiated via Commands returned from Update. Use `tea.Cmd` to perform I/O operations:
+- Create custom message types for API responses
+- Return commands that fetch data in the background
+- Handle loading states in the Model
+- Process results when messages arrive back in Update
+
+Example pattern:
+```go
+type weatherDataMsg struct { data WeatherData; err error }
+
+func fetchWeatherData(port string) tea.Cmd {
+    return func() tea.Msg {
+        data, err := callNOAAAPI(port)
+        return weatherDataMsg{data, err}
+    }
+}
+```
+
+### Multi-Pane Layout
+
+For the pane-based view, consider:
+- Using Lipgloss layout functions (JoinHorizontal, JoinVertical) to compose panes
+- Maintaining separate Model fields for each pane's state
+- Implementing keyboard shortcuts to switch active panes
+- Using Bubbles viewport component for scrollable content within panes
+
+## Port Search Implementation
+
+Port search by postal code or city/state requires either:
+- A lookup database/mapping of locations to NOAA station IDs
+- Integration with NOAA's station search capabilities
+- Geocoding to map user input to nearby marine stations
+
+The implementation should handle ambiguous searches (e.g., multiple ports near a city) and provide clear selection mechanisms.
+
+## Data Refresh Strategy
+
+Consider how frequently to refresh different data types:
+- Current conditions may update more frequently
+- Tide predictions are typically static once fetched
+- Alerts should be checked regularly for safety-critical information
+
+The UI should indicate data freshness and loading states clearly.

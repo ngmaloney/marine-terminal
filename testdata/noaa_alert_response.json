@@ -1,0 +1,20 @@
+{
+  "features": [
+    {
+      "id": "alert-1",
+      "properties": {
+        "id": "alert-1",
+        "event": "Small Craft Advisory",
+        "headline": "Small Craft Advisory until 10 PM PST",
+        "description": "West winds 15 to 25 kt with gusts up to 35 kt. Seas 6 to 9 ft.",
+        "severity": "Moderate",
+        "urgency": "Expected",
+        "certainty": "Likely",
+        "onset": "2025-11-27T14:00:00-08:00",
+        "expires": "2025-11-27T22:00:00-08:00",
+        "areaDesc": "Puget Sound",
+        "instruction": "Small craft should use caution."
+      }
+    }
+  ]
+}

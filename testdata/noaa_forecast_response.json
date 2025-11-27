@@ -1,0 +1,28 @@
+{
+  "properties": {
+    "periods": [
+      {
+        "name": "This Afternoon",
+        "startTime": "2025-11-27T14:00:00-08:00",
+        "endTime": "2025-11-27T18:00:00-08:00",
+        "temperature": 58,
+        "temperatureUnit": "F",
+        "windSpeed": "15 to 20 mph",
+        "windDirection": "W",
+        "shortForecast": "Partly Cloudy",
+        "detailedForecast": "Partly cloudy. High near 58. W winds 15 to 20 mph with gusts up to 30 mph."
+      },
+      {
+        "name": "Tonight",
+        "startTime": "2025-11-27T18:00:00-08:00",
+        "endTime": "2025-11-28T06:00:00-08:00",
+        "temperature": 45,
+        "temperatureUnit": "F",
+        "windSpeed": "10 to 15 mph",
+        "windDirection": "W",
+        "shortForecast": "Mostly Clear",
+        "detailedForecast": "Mostly clear. Low around 45. W winds 10 to 15 mph."
+      }
+    ]
+  }
+}
