@@ -19,12 +19,40 @@ A terminal-based application for displaying NOAA weather and tide information fo
 
 ## Installation
 
-### Prerequisites
+### Pre-built Binaries (Recommended)
 
-- Go 1.21 or later
-- (Optional) [Task](https://taskfile.dev) - Modern task runner for development
+Download the latest release for your platform from the [releases page](https://github.com/ngmaloney/marine-terminal/releases):
+
+**macOS:**
+```bash
+# Intel (x86_64)
+curl -L https://github.com/ngmaloney/marine-terminal/releases/latest/download/marine-terminal_Darwin_x86_64.tar.gz | tar xz
+sudo mv marine-terminal /usr/local/bin/
+
+# Apple Silicon (arm64)
+curl -L https://github.com/ngmaloney/marine-terminal/releases/latest/download/marine-terminal_Darwin_arm64.tar.gz | tar xz
+sudo mv marine-terminal /usr/local/bin/
+```
+
+**Linux:**
+```bash
+# x86_64
+curl -L https://github.com/ngmaloney/marine-terminal/releases/latest/download/marine-terminal_Linux_x86_64.tar.gz | tar xz
+sudo mv marine-terminal /usr/local/bin/
+
+# arm64
+curl -L https://github.com/ngmaloney/marine-terminal/releases/latest/download/marine-terminal_Linux_arm64.tar.gz | tar xz
+sudo mv marine-terminal /usr/local/bin/
+```
+
+**Windows:**
+Download the `.zip` file from the [releases page](https://github.com/ngmaloney/marine-terminal/releases/latest), extract it, and add the executable to your PATH.
 
 ### Build from Source
+
+**Prerequisites:**
+- Go 1.21 or later
+- (Optional) [Task](https://taskfile.dev) - Modern task runner for development
 
 ```bash
 # Clone the repository
@@ -352,6 +380,27 @@ Contributions are welcome! Please ensure:
 - Follow Go best practices
 
 See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
+
+### Creating a Release
+
+Releases are automated using GoReleaser and GitHub Actions:
+
+1. **Tag a new version:**
+   ```bash
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
+   ```
+
+2. **GitHub Actions will automatically:**
+   - Build binaries for macOS (Intel & ARM), Linux (x86_64 & ARM64), and Windows
+   - Generate checksums
+   - Create a GitHub release with downloadable assets
+   - Include the bundled zipcode data in each release
+
+3. **Test locally before releasing:**
+   ```bash
+   goreleaser release --snapshot --clean
+   ```
 
 ## License
 
