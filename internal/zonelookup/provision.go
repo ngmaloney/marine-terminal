@@ -63,8 +63,9 @@ func ProvisionDatabaseWithProgress(dbPath string, progressChan chan<- string) er
 	sendProgress := func(msg string) {
 		if progressChan != nil {
 			progressChan <- msg
+		} else {
+			log.Println(msg)
 		}
-		log.Println(msg)
 	}
 
 	sendProgress("Marine zones table not found, provisioning...")
@@ -274,7 +275,9 @@ func buildDatabase(shapefilePath, dbPath string, progressChan chan<- string) err
 
 		geometryJSON, err := json.Marshal(coords)
 		if err != nil {
-			log.Printf("Error marshaling geometry for %s: %v", zoneCode, err)
+			if progressChan == nil {
+				log.Printf("Error marshaling geometry for %s: %v", zoneCode, err)
+			}
 			continue
 		}
 
@@ -290,7 +293,9 @@ func buildDatabase(shapefilePath, dbPath string, progressChan chan<- string) err
 			centerLat, centerLon)
 
 		if err != nil {
-			log.Printf("Error inserting zone %s: %v", zoneCode, err)
+			if progressChan == nil {
+				log.Printf("Error inserting zone %s: %v", zoneCode, err)
+			}
 			continue
 		}
 
@@ -299,16 +304,18 @@ func buildDatabase(shapefilePath, dbPath string, progressChan chan<- string) err
 			msg := fmt.Sprintf("Processed %d zones...", count)
 			if progressChan != nil {
 				progressChan <- msg
+			} else {
+				log.Println(msg)
 			}
-			log.Println(msg)
 		}
 	}
 
 	msg := fmt.Sprintf("Successfully created database with %d marine zones", count)
 	if progressChan != nil {
 		progressChan <- msg
+	} else {
+		log.Println(msg)
 	}
-	log.Println(msg)
 	return nil
 }
 

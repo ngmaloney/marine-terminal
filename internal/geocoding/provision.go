@@ -59,8 +59,9 @@ func ProvisionZipcodeDatabaseWithProgress(dbPath string, progressChan chan<- str
 	sendProgress := func(msg string) {
 		if progressChan != nil {
 			progressChan <- msg
+		} else {
+			log.Println(msg)
 		}
-		log.Println(msg)
 	}
 
 	sendProgress("Zipcode table not found, provisioning...")
@@ -206,8 +207,9 @@ func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) er
 			msg := fmt.Sprintf("Processed %d zipcodes...", count)
 			if progressChan != nil {
 				progressChan <- msg
+			} else {
+				log.Println(msg)
 			}
-			log.Println(msg)
 		}
 	}
 
@@ -219,7 +221,8 @@ func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) er
 	msg := fmt.Sprintf("Successfully created database with %d zipcodes", count)
 	if progressChan != nil {
 		progressChan <- msg
+	} else {
+		log.Println(msg)
 	}
-	log.Println(msg)
 	return nil
 }
