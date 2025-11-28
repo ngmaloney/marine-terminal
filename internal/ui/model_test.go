@@ -8,7 +8,7 @@ import (
 )
 
 func TestNewModel(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	if m.state != StateSearch {
 		t.Errorf("NewModel() state = %v, want StateSearch", m.state)
@@ -20,7 +20,7 @@ func TestNewModel(t *testing.T) {
 }
 
 func TestModel_Update_WindowSize(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 	updatedModel, _ := m.Update(msg)
@@ -36,7 +36,7 @@ func TestModel_Update_WindowSize(t *testing.T) {
 }
 
 func TestModel_Update_ErrorMsg(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 	testErr := errMsg{err: tea.ErrProgramKilled}
 
 	updatedModel, _ := m.Update(testErr)
@@ -52,7 +52,7 @@ func TestModel_Update_ErrorMsg(t *testing.T) {
 }
 
 func TestModel_CtrlC_Quits(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC, Runes: []rune{'c'}}
 	_, cmd := m.Update(msg)
@@ -63,7 +63,7 @@ func TestModel_CtrlC_Quits(t *testing.T) {
 }
 
 func TestModel_DisplayStateKeyHandling(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 	m.state = StateDisplay
 	m.selectedZone = &zonelookup.ZoneInfo{Code: "ANZ251", Name: "Cape Cod Bay"}
 
@@ -84,7 +84,7 @@ func TestModel_DisplayStateKeyHandling(t *testing.T) {
 
 // TestTextInputHandling verifies that text input works correctly
 func TestTextInputHandling(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	// Verify search input is focused
 	if !m.searchInput.Focused() {
@@ -132,7 +132,7 @@ func TestTextInputHandling(t *testing.T) {
 
 // TestErrorClearingOnInput verifies that errors are cleared when user types
 func TestErrorClearingOnInput(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	// Set an error
 	m.err = tea.ErrProgramKilled
@@ -155,7 +155,7 @@ func TestErrorClearingOnInput(t *testing.T) {
 
 // TestEnterKeyWithEmptyInput verifies that pressing Enter with empty input does nothing
 func TestEnterKeyWithEmptyInput(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	// Press Enter with empty input
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
@@ -175,7 +175,7 @@ func TestEnterKeyWithEmptyInput(t *testing.T) {
 
 // TestSearchAgainFromDisplay verifies 'S' key returns to search
 func TestSearchAgainFromDisplay(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 	m.state = StateDisplay
 	m.selectedZone = &zonelookup.ZoneInfo{Code: "ANZ251", Name: "Cape Cod Bay"}
 
@@ -210,7 +210,7 @@ func TestModel_View_States(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel()
+			m := NewModel("")
 			m.state = tt.state
 			m.width = 80
 			m.height = 24
@@ -238,7 +238,7 @@ func TestModel_View_States(t *testing.T) {
 }
 
 func TestModel_View_InitialLoading(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 	view := m.View()
 
 	if view != "Loading..." {

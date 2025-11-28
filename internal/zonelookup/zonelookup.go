@@ -122,4 +122,32 @@ func GetNearbyMarineZones(dbPath string, lat, lon float64, maxDistanceMiles floa
 	return zones, nil
 }
 
+// GetZoneInfoByCode retrieves a single marine zone by its zone code.
+func GetZoneInfoByCode(dbPath, zoneCode string) (*ZoneInfo, error) {
+	db, err := GetDB(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("opening database: %w", err)
+	}
 
+	var code, name string
+	var centerLat, centerLon float64
+
+	err = db.QueryRow(
+		"SELECT zone_code, zone_name, center_lat, center_lon FROM marine_zones WHERE zone_code = ?",
+		zoneCode,
+	).Scan(&code, &name, &centerLat, &centerLon)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("zone code %s not found", zoneCode)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying zone by code: %w", err)
+	}
+
+	// For direct lookup, distance is not relevant, so set to 0.0
+	return &ZoneInfo{
+		Code:     code,
+		Name:     name,
+		Distance: 0.0,
+	}, nil
+}

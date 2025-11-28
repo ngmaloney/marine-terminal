@@ -1,8 +1,10 @@
 package ui
 
 import (
-
+	"github.com/charmbracelet/bubbletea"
+	"github.com/ngmaloney/marine-terminal/internal/database"
 	"github.com/ngmaloney/marine-terminal/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
 
 // Message types for async operations
@@ -29,4 +31,18 @@ type alertsFetchedMsg struct {
 // errMsg is a message type for errors
 type errMsg struct {
 	err error
+}
+
+// directLoadStationMsg is sent when a station is directly loaded by code
+type directLoadStationMsg struct {
+	zone *zonelookup.ZoneInfo
+	err  error
+}
+
+// directLoadStation attempts to load zone info for a given station code
+func directLoadStation(zoneCode string) tea.Cmd {
+	return func() tea.Msg {
+		zone, err := zonelookup.GetZoneInfoByCode(database.DBPath(), zoneCode)
+		return directLoadStationMsg{zone: zone, err: err}
+	}
 }

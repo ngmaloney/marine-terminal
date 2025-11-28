@@ -10,7 +10,7 @@ import (
 
 // TestSearch_ErrorRecovery tests that users can recover from geocoding errors
 func TestSearch_ErrorRecovery(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	// Step 1: User types invalid location
 	for _, char := range "InvalidCity123" {
@@ -68,7 +68,7 @@ func TestSearch_ErrorRecovery(t *testing.T) {
 
 // TestSearch_EmptyQueryHandling tests empty search handling
 func TestSearch_EmptyQueryHandling(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	// Press Enter with empty query
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
@@ -93,7 +93,7 @@ func TestSearch_EmptyQueryHandling(t *testing.T) {
 
 // TestSearch_ZipcodeSearch tests zipcode search functionality
 func TestSearch_ZipcodeSearch(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	// Search by zipcode
 	for _, char := range "02633" {
@@ -119,7 +119,7 @@ func TestSearch_ZipcodeSearch(t *testing.T) {
 
 // TestSearch_NoZonesFound tests handling when no zones are found near location
 func TestSearch_NoZonesFound(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 	m.state = StateLoading
 
 	// Simulate successful geocoding

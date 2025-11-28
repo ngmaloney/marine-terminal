@@ -63,7 +63,7 @@ func (m *mockAlertClient) GetActiveAlertsByZone(ctx context.Context, marineZone 
 // TestIntegration_SearchAndGeocode tests the geocoding workflow
 func TestIntegration_SearchAndGeocode(t *testing.T) {
 	// Create model
-	m := NewModel()
+	m := NewModel("")
 
 	// Step 1: User types "02633" (Chatham zipcode)
 	for _, char := range "02633" {
@@ -137,7 +137,7 @@ func TestIntegration_ZoneSelection(t *testing.T) {
 	}
 
 	// Create model with mock clients
-	m := NewModel()
+	m := NewModel("")
 	m.weatherClient = &mockWeatherClient{conditions: mockConditions, forecast: mockForecast}
 	m.alertClient = &mockAlertClient{alerts: mockAlerts}
 
@@ -227,7 +227,7 @@ func TestIntegration_ZoneSelection(t *testing.T) {
 
 // TestIntegration_ErrorHandling tests graceful error handling
 func TestIntegration_ErrorHandling(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	// Set up clients that will fail
 	testErr := fmt.Errorf("API timeout")
@@ -271,7 +271,7 @@ func TestIntegration_ErrorHandling(t *testing.T) {
 
 // TestIntegration_SearchAgain tests returning to search from display
 func TestIntegration_SearchAgain(t *testing.T) {
-	m := NewModel()
+	m := NewModel("")
 
 	// Set up as if we're in display mode
 	m.state = StateDisplay

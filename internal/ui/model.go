@@ -71,10 +71,12 @@ type Model struct {
 	spinner           spinner.Model
 	provisionStatus   string
 	provisionChannels *provisioningStartedMsg
+
+	initialStationCode string // New: for direct loading via CLI arg
 }
 
 // NewModel creates a new application model
-func NewModel() Model {
+func NewModel(initialStationCode string) Model {
 	ti := textinput.New()
 	ti.Placeholder = "Enter zipcode or city, state (e.g. 02633 or Chatham, MA)..."
 	ti.Focus()
@@ -86,13 +88,14 @@ func NewModel() Model {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	return Model{
-		state:         StateSearch, // Will be checked in Init
+		state:         StateSearch, // Will be checked in Init, potentially overridden
 		activePane:    PaneWeather,
 		searchInput:   ti,
 		geocoder:      geocoding.NewGeocoder(),
 		weatherClient: noaa.NewWeatherClient(),
 		alertClient:   noaa.NewAlertClient(),
 		spinner:       s,
+		initialStationCode: initialStationCode,
 	}
 }
 
@@ -113,6 +116,12 @@ func (m Model) Init() tea.Cmd {
 
 	if zonesNeeded || zipNeeded {
 		return tea.Batch(m.spinner.Tick, initiateProvisioning())
+	}
+
+	// If no provisioning needed, check for direct station load
+	if m.initialStationCode != "" {
+		m.state = StateLoading
+		return tea.Batch(m.spinner.Tick, directLoadStation(m.initialStationCode))
 	}
 
 	return textinput.Blink
@@ -222,6 +231,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = StateDisplay
 		}
 		return m, nil
+
+	case directLoadStationMsg:
+		if msg.err != nil {
+			m.err = fmt.Errorf("failed to load station '%s': %w", m.initialStationCode, msg.err)
+			m.state = StateError
+			return m, nil
+		}
+		m.selectedZone = msg.zone
+		m.state = StateLoading
+		m.loadingWeather = true
+		m.loadingAlerts = true
+		return m, tea.Batch(
+			fetchZoneWeather(m.weatherClient, m.selectedZone.Code),
+			fetchZoneAlerts(m.alertClient, m.selectedZone.Code),
+		)
 	}
 
 	// Handle keyboard input
