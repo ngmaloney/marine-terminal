@@ -573,6 +573,15 @@ func (m Model) handleSavedPorts(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchInput.Focus()
 			return m, textinput.Blink
 		}
+		// Handle escape key - return to weather pane if we have a selected zone
+		if keyMsg.Type == tea.KeyEsc {
+			if m.selectedZone != nil {
+				m.state = StateDisplay
+				return m, nil
+			}
+			// If no zone selected, stay in saved ports
+			return m, nil
+		}
 		// New: handle delete key
 		if keyMsg.String() == "d" {
 			if item, ok := m.portList.SelectedItem().(portItem); ok {
@@ -772,11 +781,12 @@ func (m Model) renderWeatherView() string {
 					tideInfo += fmt.Sprintf("Air Temp: %.1f°F  Pressure: %.1f mb\n", m.tideConditions.Temperature, m.tideConditions.Pressure)
 				}
 				if m.tides != nil {
-					tideInfo += "\n" + m.tideChart.View() + "\n\nUpcoming Tides:"
+					tideInfo += "\nUpcoming Tides:"
 					for i, event := range m.tides.Events {
 						if i >= 6 { break }
 						tideInfo += fmt.Sprintf("\n  %s  %-4s  %.1f ft", event.Time.Format("Jan 2, 3:04 PM"), event.Type, event.Height)
 					}
+					tideInfo += "\n\n" + m.tideChart.View()
 				} else { tideInfo += "\nNo tide predictions available." }
 			}
 		}
