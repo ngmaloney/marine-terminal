@@ -4,10 +4,24 @@ import (
 	"github.com/charmbracelet/bubbletea"
 	"github.com/ngmaloney/marine-terminal/internal/database"
 	"github.com/ngmaloney/marine-terminal/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/stations"
 	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
 
 // Message types for async operations
+
+// tideStationFoundMsg is sent when tide stations are found
+type tideStationFoundMsg struct {
+	stations []stations.TideStationInfo
+	err      error
+}
+
+// tideDataFetchedMsg is sent when tide predictions are fetched
+type tideDataFetchedMsg struct {
+	tides      *models.TideData
+	conditions *models.MarineConditions
+	err        error
+}
 
 // weatherFetchedMsg is sent when weather data has been fetched
 type weatherFetchedMsg struct {

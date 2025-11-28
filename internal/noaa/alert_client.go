@@ -5,16 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/ngmaloney/marine-terminal/internal/models"
 )
+
+const cacheDuration = 15 * time.Minute
+
+type cacheEntry struct {
+	data      *models.AlertData
+	fetchedAt time.Time
+}
 
 // NOAAAlertClient implements AlertClient using the NOAA Weather API
 type NOAAAlertClient struct {
 	baseURL    string
 	httpClient *http.Client
 	userAgent  string
+	cache      map[string]cacheEntry
+	mu         sync.RWMutex
 }
 
 // NewAlertClient creates a new NOAA alert client
@@ -25,6 +35,7 @@ func NewAlertClient() *NOAAAlertClient {
 			Timeout: 30 * time.Second,
 		},
 		userAgent: "MarineTerminal/1.0 (github.com/ngmaloney/marine-terminal)",
+		cache:      make(map[string]cacheEntry),
 	}
 }
 
@@ -103,6 +114,15 @@ func (c *NOAAAlertClient) GetActiveAlerts(ctx context.Context, lat, lon float64)
 
 // GetActiveAlertsByZone retrieves active alerts for a specific marine zone
 func (c *NOAAAlertClient) GetActiveAlertsByZone(ctx context.Context, marineZone string) (*models.AlertData, error) {
+	// Check cache first
+	c.mu.RLock()
+	entry, ok := c.cache[marineZone]
+	c.mu.RUnlock()
+
+	if ok && time.Since(entry.fetchedAt) < cacheDuration {
+		return entry.data, nil
+	}
+
 	// Query alerts by zone
 	url := fmt.Sprintf("%s/alerts/active?zone=%s", c.baseURL, marineZone)
 
@@ -168,6 +188,11 @@ func (c *NOAAAlertClient) GetActiveAlertsByZone(ctx context.Context, marineZone 
 		// Include all alerts for this zone (they should all be marine)
 		alertData.Alerts = append(alertData.Alerts, alert)
 	}
+
+	// Store in cache
+	c.mu.Lock()
+	c.cache[marineZone] = cacheEntry{data: alertData, fetchedAt: time.Now()}
+	c.mu.Unlock()
 
 	return alertData, nil
 }

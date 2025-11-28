@@ -99,4 +99,19 @@ var (
 			BorderForeground(colorPrimary).
 			Padding(1, 2).
 			Width(60)
+
+	// Tab styles
+	tabStyle = lipgloss.NewStyle().
+			Padding(0, 1).
+			Foreground(colorMuted)
+
+	activeTabStyle = lipgloss.NewStyle().
+			Padding(0, 1).
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(colorPrimary)
+
+	tabGapStyle = lipgloss.NewStyle().
+			Padding(0, 1).
+			Foreground(colorMuted)
 )

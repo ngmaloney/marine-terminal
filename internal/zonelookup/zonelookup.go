@@ -47,7 +47,7 @@ func GetDB(dbPath string) (*sql.DB, error) {
 }
 
 // haversineDistance calculates distance in miles between two lat/lon points
-func haversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
+func HaversineDistance(lat1, lon1, lat2, lon2 float64) float64 {
 	const earthRadiusMiles = 3959.0
 
 	// Convert to radians
@@ -106,7 +106,7 @@ func getNearbyMarineZonesFromDB(db *sql.DB, lat, lon float64, maxDistanceMiles f
 		}
 
 		// Calculate actual distance
-		distance := haversineDistance(lat, lon, centerLat, centerLon)
+		distance := HaversineDistance(lat, lon, centerLat, centerLon)
 
 		// Only include zones within the max distance
 		if distance <= maxDistanceMiles {

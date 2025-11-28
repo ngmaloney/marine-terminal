@@ -77,8 +77,8 @@ func TestModel_DisplayStateKeyHandling(t *testing.T) {
 	}
 
 	// Active pane should have changed
-	if m.activePane != PaneAlerts {
-		t.Errorf("After tab, activePane = %v, want PaneAlerts", m.activePane)
+	if m.activePane != PaneTides {
+		t.Errorf("After tab, activePane = %v, want PaneTides", m.activePane)
 	}
 }
 
@@ -271,7 +271,7 @@ func TestActivePane_Constants(t *testing.T) {
 	if PaneWeather != 0 {
 		t.Errorf("PaneWeather = %d, want 0", PaneWeather)
 	}
-	if PaneAlerts != 1 {
-		t.Errorf("PaneAlerts = %d, want 1", PaneAlerts)
+	if PaneTides != 1 {
+		t.Errorf("PaneTides = %d, want 1", PaneTides)
 	}
 }

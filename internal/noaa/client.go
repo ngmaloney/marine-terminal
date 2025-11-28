@@ -23,6 +23,9 @@ type WeatherClient interface {
 type TideClient interface {
 	// GetTidePredictions retrieves tide predictions for the next 3 days
 	GetTidePredictions(ctx context.Context, stationID string, startDate, endDate time.Time) (*models.TideData, error)
+
+	// GetMeteorologicalData retrieves meteorological data (e.g., air temperature, pressure) for a station
+	GetMeteorologicalData(ctx context.Context, stationID string, startDate, endDate time.Time) (*models.MarineConditions, error)
 }
 
 // AlertClient defines the interface for fetching NOAA alerts

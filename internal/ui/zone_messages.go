@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,6 +10,7 @@ import (
 	"github.com/ngmaloney/marine-terminal/internal/geocoding"
 	"github.com/ngmaloney/marine-terminal/internal/models"
 	"github.com/ngmaloney/marine-terminal/internal/noaa"
+	"github.com/ngmaloney/marine-terminal/internal/stations"
 	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
 
@@ -56,6 +58,14 @@ func findNearbyZones(lat, lon float64) tea.Cmd {
 	}
 }
 
+// findNearestTideStation finds the nearest tide station to a location
+func findNearestTideStation(lat, lon float64) tea.Cmd {
+	return func() tea.Msg {
+		stations, err := stations.FindNearbyStations(database.DBPath(), lat, lon, 100.0)
+		return tideStationFoundMsg{stations: stations, err: err}
+	}
+}
+
 // fetchZoneWeather fetches weather data for a marine zone
 func fetchZoneWeather(client noaa.WeatherClient, zoneCode string) tea.Cmd {
 	return func() tea.Msg {
@@ -79,6 +89,58 @@ func fetchZoneAlerts(client noaa.AlertClient, zoneCode string) tea.Cmd {
 
 		alerts, err := client.GetActiveAlertsByZone(ctx, zoneCode)
 		return zoneAlertsFetchedMsg{alerts: alerts, err: err}
+	}
+}
+
+// fetchTideData fetches tide predictions and meteorological data for a station
+func fetchTideData(client noaa.TideClient, stationID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		now := time.Now()
+		endDate := now.AddDate(0, 0, 3)
+
+		// Channels for results
+		type tideResult struct {
+			data *models.TideData
+			err  error
+		}
+		type metResult struct {
+			data *models.MarineConditions
+			err  error
+		}
+
+		tideChan := make(chan tideResult)
+		metChan := make(chan metResult)
+
+		go func() {
+			data, err := client.GetTidePredictions(ctx, stationID, now, endDate)
+			tideChan <- tideResult{data, err}
+		}()
+
+		go func() {
+			data, err := client.GetMeteorologicalData(ctx, stationID, now, endDate)
+			metChan <- metResult{data, err}
+		}()
+
+		// Wait for both
+		tRes := <-tideChan
+		mRes := <-metChan
+
+		// Combine errors if both failed
+		var err error
+		if tRes.err != nil && mRes.err != nil {
+			err = fmt.Errorf("tides: %v, met: %v", tRes.err, mRes.err)
+		} else if tRes.err != nil {
+			err = tRes.err
+		}
+
+		return tideDataFetchedMsg{
+			tides:      tRes.data,
+			conditions: mRes.data,
+			err:        err,
+		}
 	}
 }
 
