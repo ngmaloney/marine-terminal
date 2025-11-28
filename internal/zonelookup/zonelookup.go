@@ -126,15 +126,6 @@ func getNearbyMarineZonesFromDB(db *sql.DB, lat, lon float64, maxDistanceMiles f
 	return zones, nil
 }
 
-// GetZoneInfoByCode retrieves a single marine zone by its zone code.
-func GetZoneInfoByCode(dbPath, zoneCode string) (*ZoneInfo, error) {
-	db, err := GetDB(dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("opening database: %w", err)
-	}
-	return getZoneInfoByCodeFromDB(db, zoneCode)
-}
-
 // getZoneInfoByCodeFromDB retrieves a single marine zone using the provided database connection
 func getZoneInfoByCodeFromDB(db *sql.DB, zoneCode string) (*ZoneInfo, error) {
 	var code, name string

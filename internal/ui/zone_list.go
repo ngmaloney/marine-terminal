@@ -19,12 +19,12 @@ func (z zoneItem) FilterValue() string {
 
 // Title implements list.DefaultItem
 func (z zoneItem) Title() string {
-	return fmt.Sprintf("%s - %s", z.zone.Code, z.zone.Name)
+	return fmt.Sprintf("%s - %s (%.1f mi)", z.zone.Code, z.zone.Name, z.zone.Distance)
 }
 
 // Description implements list.DefaultItem
 func (z zoneItem) Description() string {
-	return fmt.Sprintf("%.1f miles away", z.zone.Distance)
+	return "" // Empty to avoid duplicate display
 }
 
 // createZoneList creates a list.Model from zone info
@@ -34,7 +34,12 @@ func createZoneList(zones []zonelookup.ZoneInfo, width, height int) list.Model {
 		items[i] = zoneItem{zone: zone}
 	}
 
-	l := list.New(items, list.NewDefaultDelegate(), width, height)
+	delegate := list.NewDefaultDelegate()
+	delegate.SetHeight(1) // Only title line needed now
+	delegate.SetSpacing(0)
+	delegate.ShowDescription = false // Don't show description since it's empty
+
+	l := list.New(items, delegate, width, height)
 	l.Title = "Select a Marine Zone"
 	l.SetShowHelp(true)
 	l.SetFilteringEnabled(false)

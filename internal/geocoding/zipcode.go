@@ -48,6 +48,16 @@ func lookupZipcode(zipcode string) (*Location, error) {
 	return lookupZipcodeInDB(db, zipcode)
 }
 
+// lookupCityState looks up a city and state in the SQLite database and returns a Location
+// If multiple zipcodes match, returns the first one (by zipcode)
+func lookupCityState(city, state string) (*Location, error) {
+	db, err := getZipcodeDB(database.DBPath())
+	if err != nil {
+		return nil, fmt.Errorf("opening zipcode database: %w", err)
+	}
+	return lookupCityStateInDB(db, city, state)
+}
+
 // lookupZipcodeInDB looks up a zipcode in the provided database connection
 func lookupZipcodeInDB(db *sql.DB, zipcode string) (*Location, error) {
 	var city, state string
@@ -69,5 +79,29 @@ func lookupZipcodeInDB(db *sql.DB, zipcode string) (*Location, error) {
 		Latitude:  lat,
 		Longitude: lon,
 		Name:      fmt.Sprintf("%s, %s %s", city, state, zipcode),
+	}, nil
+}
+
+// lookupCityStateInDB looks up a city and state in the provided database connection
+func lookupCityStateInDB(db *sql.DB, city, state string) (*Location, error) {
+	var zipcode, foundCity, foundState string
+	var lat, lon float64
+
+	err := db.QueryRow(
+		"SELECT zipcode, city, state, latitude, longitude FROM zipcodes WHERE city = ? AND state = ? ORDER BY zipcode LIMIT 1",
+		city, state,
+	).Scan(&zipcode, &foundCity, &foundState, &lat, &lon)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("no location found for %s, %s", city, state)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying city/state: %w", err)
+	}
+
+	return &Location{
+		Latitude:  lat,
+		Longitude: lon,
+		Name:      fmt.Sprintf("%s, %s %s", foundCity, foundState, zipcode),
 	}, nil
 }

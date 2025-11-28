@@ -133,10 +133,13 @@ func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) er
 		return fmt.Errorf("creating table: %w", err)
 	}
 
-	// Create index on state for efficient lookups
-	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_state ON zipcodes(state)`)
+	// Create indexes for efficient lookups
+	_, err = db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_state ON zipcodes(state);
+		CREATE INDEX IF NOT EXISTS idx_city_state ON zipcodes(city, state);
+	`)
 	if err != nil {
-		return fmt.Errorf("creating index: %w", err)
+		return fmt.Errorf("creating indexes: %w", err)
 	}
 
 	// Open CSV file

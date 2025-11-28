@@ -430,20 +430,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case directLoadStationMsg:
-		if msg.err != nil {
-			m.err = fmt.Errorf("failed to load station '%s': %w", m.initialStationCode, msg.err)
-			m.state = StateError
-			return m, nil
-		}
-		m.selectedZone = msg.zone
-		m.state = StateLoading
-		m.loadingWeather = true
-		m.loadingAlerts = true
-		return m, tea.Batch(
-			fetchZoneWeather(m.weatherClient, m.selectedZone.Code),
-			fetchZoneAlerts(m.alertClient, m.selectedZone.Code),
-		)
 	}
 
 	// Handle keyboard input
@@ -514,8 +500,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.searchInput, cmd = m.searchInput.Update(msg)
 	case StateSavePrompt:
 		m.saveInput, cmd = m.saveInput.Update(msg)
-	case StateZoneList:
-		m.zoneList, cmd = m.zoneList.Update(msg)
+	// StateZoneList is handled by handleZoneList() above, don't update twice
 	case StateSavedPorts:
 		m.portList, cmd = m.portList.Update(msg)
 	}
