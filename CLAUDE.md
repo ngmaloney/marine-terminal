@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **MANDATORY FOR ALL CODE CHANGES:**
 
-1. **ALWAYS run tests after ANY code change**: `GO111MODULE=on go test ./...`
+1. **ALWAYS run tests after ANY code change**: `go test ./...`
 2. **ALL tests MUST pass** before work is considered complete
 3. **Fix failing tests immediately** - do not move on to other tasks
 4. **Add tests for new functionality** before or alongside implementation
@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Test Execution Protocol:**
 ```bash
 # After EVERY change, run:
-GO111MODULE=on go test ./...
+go test ./...
 
 # If any tests fail:
 # 1. Read the test failure output carefully
@@ -28,7 +28,7 @@ GO111MODULE=on go test ./...
 
 ## Project Overview
 
-Mariner TUI is a terminal application for displaying NOAA weather and tide information for US ports. The application retrieves and displays:
+Marine Terminal is a terminal application for displaying NOAA weather and tide information for US ports. The application retrieves and displays:
 - Current weather and 3-day forecast
 - NOAA wind predictions
 - Wave heights
@@ -50,9 +50,9 @@ The interface uses colored pane views with optional UTF emoji for weather condit
 
 Follow standard Go project layout:
 ```
-mariner-tui/
+marine-terminal/
 ├── cmd/
-│   └── mariner-tui/      # Main application entry point
+│   └── marine-terminal/      # Main application entry point
 │       └── main.go
 ├── internal/             # Private application code
 │   ├── ui/              # Bubble Tea UI components and models
@@ -72,16 +72,16 @@ Use `internal/` for code that should not be imported by external projects. Keep 
 
 ```bash
 # Initialize Go module (if not already done)
-go mod init github.com/ngmaloney/mariner-tui
+go mod init github.com/ngmaloney/marine-terminal
 
 # Install dependencies
 go mod download
 
 # Build the application
-go build -o mariner-tui ./cmd/mariner-tui
+go build -o marine-terminal ./cmd/marine-terminal
 
 # Run the application
-go run ./cmd/mariner-tui
+go run ./cmd/marine-terminal
 
 # Run all tests
 go test ./...
@@ -106,7 +106,7 @@ go fmt ./...
 golangci-lint run
 
 # Run tests and build before committing
-go test ./... && go build ./cmd/mariner-tui
+go test ./... && go build ./cmd/marine-terminal
 ```
 
 ## Testing Requirements
@@ -160,7 +160,7 @@ func TestParseWeatherData(t *testing.T) {
 
 ### Running Tests
 **MANDATORY - Tests must pass after EVERY change:**
-1. Run `GO111MODULE=on go test ./...` after EVERY code change
+1. Run `go test ./...` after EVERY code change
 2. **ALL tests must pass** - zero failures, zero exceptions
 3. Fix failing tests immediately - do not proceed to other work
 4. Add new tests for bug fixes to prevent regressions

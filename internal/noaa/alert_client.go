@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 // NOAAAlertClient implements AlertClient using the NOAA Weather API
@@ -24,7 +24,7 @@ func NewAlertClient() *NOAAAlertClient {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		userAgent: "MarinerTUI/1.0 (github.com/ngmaloney/mariner-tui)",
+		userAgent: "MarineTerminal/1.0 (github.com/ngmaloney/marine-terminal)",
 	}
 }
 

@@ -7,10 +7,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ngmaloney/mariner-tui/internal/geocoding"
-	"github.com/ngmaloney/mariner-tui/internal/models"
-	"github.com/ngmaloney/mariner-tui/internal/noaa"
-	"github.com/ngmaloney/mariner-tui/internal/zonelookup"
+	"github.com/ngmaloney/marine-terminal/internal/geocoding"
+	"github.com/ngmaloney/marine-terminal/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/noaa"
+	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
 
 // AppState represents the current state of the application
@@ -347,7 +347,7 @@ func (m Model) viewError() string {
 // viewSearch renders the search view
 func (m Model) viewSearch() string {
 	// Title
-	title := titleStyle.Render("⚓ Mariner TUI")
+	title := titleStyle.Render("⚓ Marine Terminal")
 	subtitle := mutedStyle.Render("NOAA Marine Weather & Alerts")
 
 	// Search box with border

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 // GetMarineForecastByZone retrieves marine forecast for a given zone

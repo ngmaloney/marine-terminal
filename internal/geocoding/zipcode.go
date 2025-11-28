@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ngmaloney/mariner-tui/internal/database"
+	"github.com/ngmaloney/marine-terminal/internal/database"
 	_ "modernc.org/sqlite"
 )
 

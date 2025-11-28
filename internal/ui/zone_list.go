@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/ngmaloney/mariner-tui/internal/zonelookup"
+	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
 
 // zoneItem wraps a ZoneInfo for use in a list

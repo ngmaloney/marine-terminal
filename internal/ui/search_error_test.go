@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ngmaloney/mariner-tui/internal/geocoding"
+	"github.com/ngmaloney/marine-terminal/internal/geocoding"
 )
 
 // TestSearch_ErrorRecovery tests that users can recover from geocoding errors

@@ -7,9 +7,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ngmaloney/mariner-tui/internal/geocoding"
-	"github.com/ngmaloney/mariner-tui/internal/models"
-	"github.com/ngmaloney/mariner-tui/internal/zonelookup"
+	"github.com/ngmaloney/marine-terminal/internal/geocoding"
+	"github.com/ngmaloney/marine-terminal/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
 
 // Mock clients for testing

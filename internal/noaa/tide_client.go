@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 // NOAATideClient implements TideClient using the NOAA CO-OPS API
@@ -45,7 +45,7 @@ func (c *NOAATideClient) GetTidePredictions(ctx context.Context, stationID strin
 	params.Add("interval", "hilo")    // High and low tides only
 	params.Add("units", "english")    // Feet
 	params.Add("format", "json")
-	params.Add("application", "MarinerTUI")
+	params.Add("application", "MarineTerminal")
 
 	requestURL := fmt.Sprintf("%s?%s", c.baseURL, params.Encode())
 

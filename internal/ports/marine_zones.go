@@ -3,9 +3,9 @@ package ports
 import (
 	"context"
 
-	"github.com/ngmaloney/mariner-tui/internal/database"
-	"github.com/ngmaloney/mariner-tui/internal/models"
-	"github.com/ngmaloney/mariner-tui/internal/zonelookup"
+	"github.com/ngmaloney/marine-terminal/internal/database"
+	"github.com/ngmaloney/marine-terminal/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
 
 // PopulateMarineZones adds marine zone information to ports using SQLite database lookup

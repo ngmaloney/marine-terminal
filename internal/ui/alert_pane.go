@@ -2,7 +2,7 @@ package ui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 // getAlertStyle returns the appropriate style for an alert severity

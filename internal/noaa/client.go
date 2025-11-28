@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 // WeatherClient defines the interface for fetching weather data from NOAA

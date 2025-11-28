@@ -1,6 +1,6 @@
-# Mariner TUI Requirements Summary
+# Marine Terminal Requirements Summary
 
-Mariner TUI is a terminal applicaiton used for displaying NOAA weather and tide information for a given port.
+Marine Terminal is a terminal applicaiton used for displaying NOAA weather and tide information for a given port.
 
 * US based Only
 * Displays current weather and next 3 days

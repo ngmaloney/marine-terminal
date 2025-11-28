@@ -2,7 +2,7 @@ package ui
 
 import (
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 // Message types for async operations

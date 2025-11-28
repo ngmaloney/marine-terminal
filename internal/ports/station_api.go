@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 const (

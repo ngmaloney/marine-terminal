@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 // Client defines the interface for searching ports

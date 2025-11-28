@@ -3,7 +3,7 @@ package ui
 import (
 	"fmt"
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 // formatWind formats wind data for display

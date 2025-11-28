@@ -1,4 +1,4 @@
-# Mariner TUI
+# Marine Terminal
 
 A terminal-based application for displaying NOAA weather and tide information for US marine ports.
 
@@ -25,34 +25,34 @@ A terminal-based application for displaying NOAA weather and tide information fo
 
 ```bash
 # Clone the repository
-git clone https://github.com/ngmaloney/mariner-tui.git
-cd mariner-tui
+git clone https://github.com/ngmaloney/marine-terminal.git
+cd marine-terminal
 
 # Download dependencies
-GO111MODULE=on go mod tidy
+go mod tidy
 
 # Build the application
-GO111MODULE=on go build -o mariner-tui ./cmd/mariner-tui
+go build -o marine-terminal ./cmd/marine-terminal
 
 # Run the application
-./mariner-tui
+./marine-terminal
 ```
 
-**Note**: If you're using an older version of Go, you may need to set `GO111MODULE=on` to enable module support.
+
 
 ### First Run: Automatic Data Provisioning
 
 The application automatically downloads and configures marine zone data on first run:
 
 ```bash
-./mariner-tui
+./marine-terminal
 ```
 
 **What happens on first run:**
 1. Downloads NOAA marine zones shapefile (~12 MB)
 2. Downloads zipcode CSV data (~42,000 zipcodes)
 3. Builds SQLite database with 566+ marine forecast zones and zipcode data
-4. Creates `data/mariner.db` (~32 MB)
+4. Creates `data/marine-terminal.db` (~32 MB)
 5. Cleans up temporary files
 
 **Total time:** ~1-2 seconds
@@ -70,7 +70,7 @@ The database provisions automatically, but you can verify or rebuild it:
 rm -rf data/
 
 # Run any application that uses zones
-GO111MODULE=on go run test_nearby_zones.go
+go run test_nearby_zones.go
 ```
 
 The provisioning will:
@@ -85,7 +85,7 @@ The provisioning will:
 
 1. **Start the application**:
    ```bash
-   ./mariner-tui
+   ./marine-terminal
    ```
 
 2. **Search for a port**: Type a city name, state abbreviation, or ZIP code
@@ -222,21 +222,21 @@ If you prefer not to use Task, you can use standard Go commands:
 
 ```bash
 # Build
-GO111MODULE=on go build -o mariner-tui ./cmd/mariner-tui
+go build -o marine-terminal ./cmd/marine-terminal
 
 # Run
-GO111MODULE=on go run ./cmd/mariner-tui
+go run ./cmd/marine-terminal
 
 # Test
-GO111MODULE=on go test ./...
+go test ./...
 ```
 
 ### Project Structure
 
 ```
-mariner-tui/
+marine-terminal/
 ├── cmd/
-│   └── mariner-tui/      # Main application
+│   └── marine-terminal/      # Main application
 ├── internal/
 │   ├── models/           # Data models (Weather, Tide, Alert, Port)
 │   ├── noaa/             # NOAA API clients
@@ -244,7 +244,7 @@ mariner-tui/
 │   ├── zonelookup/       # Marine zones database and provisioning
 │   └── ui/               # Bubble Tea UI components
 ├── data/                 # Auto-generated (excluded from git)
-│   └── mariner.db        # SQLite database with marine zones and zipcodes
+│   └── marine-terminal.db        # SQLite database with marine zones and zipcodes
 ├── testdata/             # Test fixtures
 └── CLAUDE.md             # Development guide for Claude Code
 ```
@@ -253,63 +253,63 @@ mariner-tui/
 
 **Run all tests:**
 ```bash
-GO111MODULE=on go test ./...
+go test ./...
 ```
 
 **Run tests with verbose output:**
 ```bash
-GO111MODULE=on go test ./... -v
+go test ./... -v
 ```
 
 **Run tests with coverage:**
 ```bash
-GO111MODULE=on go test ./... -cover
+go test ./... -cover
 ```
 
 **Run tests for a specific package:**
 ```bash
 # Test only models
-GO111MODULE=on go test ./internal/models/... -v
+go test ./internal/models/... -v
 
 # Test only NOAA API clients
-GO111MODULE=on go test ./internal/noaa/... -v
+go test ./internal/noaa/... -v
 
 # Test only UI components
-GO111MODULE=on go test ./internal/ui/... -v
+go test ./internal/ui/... -v
 
 # Test only port search
-GO111MODULE=on go test ./internal/ports/... -v
+go test ./internal/ports/... -v
 ```
 
 **Run integration tests:**
 ```bash
-GO111MODULE=on go test ./internal/ui/... -v -run TestIntegration
+go test ./internal/ui/... -v -run TestIntegration
 ```
 
 **Generate detailed coverage report:**
 ```bash
 # Generate coverage file
-GO111MODULE=on go test ./... -coverprofile=coverage.out
+go test ./... -coverprofile=coverage.out
 
 # View coverage in terminal
-GO111MODULE=on go tool cover -func=coverage.out
+go tool cover -func=coverage.out
 
 # Generate HTML coverage report
-GO111MODULE=on go tool cover -html=coverage.out
+go tool cover -html=coverage.out
 ```
 
 **Run tests with race detector:**
 ```bash
-GO111MODULE=on go test ./... -race
+go test ./... -race
 ```
 
 **Run a specific test:**
 ```bash
 # Run only the search and fetch integration test
-GO111MODULE=on go test ./internal/ui/... -v -run TestIntegration_SearchAndFetchData
+go test ./internal/ui/... -v -run TestIntegration_SearchAndFetchData
 
 # Run only error handling tests
-GO111MODULE=on go test ./internal/ui/... -v -run TestIntegration_ErrorHandling
+go test ./internal/ui/... -v -run TestIntegration_ErrorHandling
 ```
 
 ### Expected Test Results
@@ -317,10 +317,10 @@ GO111MODULE=on go test ./internal/ui/... -v -run TestIntegration_ErrorHandling
 When you run `go test ./... -cover`, you should see:
 
 ```
-ok      github.com/ngmaloney/mariner-tui/internal/models    coverage: 100.0%
-ok      github.com/ngmaloney/mariner-tui/internal/noaa      coverage: 84.8%
-ok      github.com/ngmaloney/mariner-tui/internal/ports     coverage: 100.0%
-ok      github.com/ngmaloney/mariner-tui/internal/ui        coverage: 42.7%
+ok      github.com/ngmaloney/marine-terminal/internal/models    coverage: 100.0%
+ok      github.com/ngmaloney/marine-terminal/internal/noaa      coverage: 84.8%
+ok      github.com/ngmaloney/marine-terminal/internal/ports     coverage: 100.0%
+ok      github.com/ngmaloney/marine-terminal/internal/ui        coverage: 42.7%
 ```
 
 **Total: 88 test cases, all passing**
@@ -350,7 +350,7 @@ The application uses NOAA's official marine forecast zone boundaries to determin
 - **Distance-based lookup** - finds zones within configurable radius
 - **Sorted by proximity** - shows nearest zones first
 - **No static data** - all data from official NOAA shapefiles and CSV sources
-- **Stored locally** in `data/mariner.db` (excluded from git)
+- **Stored locally** in `data/marine-terminal.db` (excluded from git)
 
 ## Technologies
 
@@ -383,20 +383,13 @@ This project is provided as-is for educational and personal use.
 If you see errors like `cannot find package "github.com/charmbracelet/bubbletea"`, run:
 
 ```bash
-GO111MODULE=on go mod download
-GO111MODULE=on go mod tidy
+go mod download
+go mod tidy
 ```
 
 Then try building again.
 
-**Error: "modules disabled by GO111MODULE=off"**
 
-Set the environment variable:
-```bash
-export GO111MODULE=on
-```
-
-Or prefix all go commands with `GO111MODULE=on`.
 
 ### Data Provisioning Issues
 
@@ -412,7 +405,7 @@ rm -rf data/
 curl -I https://www.weather.gov/source/gis/Shapefiles/WSOM/mz18mr25.zip
 
 # Run with verbose output
-GO111MODULE=on go run test_nearby_zones.go
+go run test_nearby_zones.go
 ```
 
 **Database file is corrupted**
@@ -420,7 +413,7 @@ GO111MODULE=on go run test_nearby_zones.go
 Remove and re-provision:
 ```bash
 rm -rf data/
-./mariner-tui  # Will auto-provision on startup
+./marine-terminal  # Will auto-provision on startup
 ```
 
 **Slow download**

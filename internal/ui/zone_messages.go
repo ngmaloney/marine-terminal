@@ -5,11 +5,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ngmaloney/mariner-tui/internal/database"
-	"github.com/ngmaloney/mariner-tui/internal/geocoding"
-	"github.com/ngmaloney/mariner-tui/internal/models"
-	"github.com/ngmaloney/mariner-tui/internal/noaa"
-	"github.com/ngmaloney/mariner-tui/internal/zonelookup"
+	"github.com/ngmaloney/marine-terminal/internal/database"
+	"github.com/ngmaloney/marine-terminal/internal/geocoding"
+	"github.com/ngmaloney/marine-terminal/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/noaa"
+	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
 
 // geocodeMsg is sent when geocoding completes

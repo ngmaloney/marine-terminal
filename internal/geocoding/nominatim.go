@@ -14,7 +14,7 @@ import (
 
 const (
 	nominatimURL = "https://nominatim.openstreetmap.org/search"
-	userAgent    = "MarinerTUI/1.0" // Required by Nominatim ToS
+	userAgent    = "MarineTerminal/1.0" // Required by Nominatim ToS
 )
 
 // Geocoder converts addresses to coordinates

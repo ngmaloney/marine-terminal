@@ -1,7 +1,5 @@
 version: '3'
 
-env:
-  GO111MODULE: on
 
 tasks:
   default:
@@ -12,12 +10,12 @@ tasks:
   build:
     desc: Build the application
     cmds:
-      - go build -o mariner-tui ./cmd/mariner-tui
+      - go build -o marine-terminal ./cmd/marine-terminal
 
   run:
     desc: Run the application
     cmds:
-      - go run ./cmd/mariner-tui
+      - go run ./cmd/marine-terminal
 
   test:
     desc: Run tests
@@ -53,7 +51,7 @@ tasks:
   clean:
     desc: Clean build artifacts
     cmds:
-      - rm -f mariner-tui coverage.out
+      - rm -f marine-terminal coverage.out
 
   clean-data:
     desc: Remove database (will re-download on next run)

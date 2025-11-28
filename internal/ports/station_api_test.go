@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/marine-terminal/internal/models"
 )
 
 func TestNOAAStationClient_SearchByState(t *testing.T) {

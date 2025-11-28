@@ -1,5 +1,5 @@
 # Binaries
-mariner-tui
+marine-terminal
 *.exe
 *.exe~
 *.dll

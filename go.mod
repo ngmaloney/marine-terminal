@@ -1,4 +1,4 @@
-module github.com/ngmaloney/mariner-tui
+module github.com/ngmaloney/marine-terminal
 
 go 1.24.2
 
