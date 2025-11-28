@@ -45,11 +45,15 @@ func lookupZipcode(zipcode string) (*Location, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening zipcode database: %w", err)
 	}
+	return lookupZipcodeInDB(db, zipcode)
+}
 
+// lookupZipcodeInDB looks up a zipcode in the provided database connection
+func lookupZipcodeInDB(db *sql.DB, zipcode string) (*Location, error) {
 	var city, state string
 	var lat, lon float64
 
-	err = db.QueryRow(
+	err := db.QueryRow(
 		"SELECT city, state, latitude, longitude FROM zipcodes WHERE zipcode = ?",
 		zipcode,
 	).Scan(&city, &state, &lat, &lon)

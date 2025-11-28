@@ -699,7 +699,7 @@ func (m Model) renderWeatherView() string {
 	sections = append(sections, boxStyle.Render(alertContent))
 
 	// Help text
-	help := helpStyle.Render("S: New search • Tab: Switch panes • Q: Quit")
+	help := helpStyle.Render("S: New search • Q: Quit")
 
 	sections = append(sections, "", help)
 

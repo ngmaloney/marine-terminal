@@ -71,7 +71,11 @@ func GetNearbyMarineZones(dbPath string, lat, lon float64, maxDistanceMiles floa
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
+	return getNearbyMarineZonesFromDB(db, lat, lon, maxDistanceMiles)
+}
 
+// getNearbyMarineZonesFromDB finds marine zones using the provided database connection
+func getNearbyMarineZonesFromDB(db *sql.DB, lat, lon float64, maxDistanceMiles float64) ([]ZoneInfo, error) {
 	// Query zones within an expanded bounding box (roughly +/- 1 degree = ~69 miles)
 	// This is a rough filter to reduce the number of zones we calculate distance for
 	latDelta := maxDistanceMiles / 69.0 * 1.5 // Add 50% margin
@@ -128,11 +132,15 @@ func GetZoneInfoByCode(dbPath, zoneCode string) (*ZoneInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
+	return getZoneInfoByCodeFromDB(db, zoneCode)
+}
 
+// getZoneInfoByCodeFromDB retrieves a single marine zone using the provided database connection
+func getZoneInfoByCodeFromDB(db *sql.DB, zoneCode string) (*ZoneInfo, error) {
 	var code, name string
 	var centerLat, centerLon float64
 
-	err = db.QueryRow(
+	err := db.QueryRow(
 		"SELECT zone_code, zone_name, center_lat, center_lon FROM marine_zones WHERE zone_code = ?",
 		zoneCode,
 	).Scan(&code, &name, &centerLat, &centerLon)
