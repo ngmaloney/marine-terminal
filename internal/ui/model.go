@@ -217,7 +217,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tideChart = timeserieslinechart.New(chartWidth, 15)
 		// If we have tide data, redraw the chart
 		if m.tides != nil {
-			m.tideChart.Clear()
 			for _, event := range m.tides.Events {
 				m.tideChart.Push(timeserieslinechart.TimePoint{
 					Time:  event.Time,
@@ -391,17 +390,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tides = msg.tides
 			m.tideConditions = msg.conditions
 			
-			// Update chart data
+			// Update chart data - recreate chart to ensure clean state
 			if m.tides != nil {
-				m.tideChart.Clear() // Clear old data first
-				
+				// Get current chart dimensions
+				chartWidth := m.width - 8
+				if chartWidth < 40 {
+					chartWidth = 40
+				}
+				// Create fresh chart to avoid artifacts
+				m.tideChart = timeserieslinechart.New(chartWidth, 15)
+
 				for _, event := range m.tides.Events {
 					m.tideChart.Push(timeserieslinechart.TimePoint{
 						Time:  event.Time,
 						Value: event.Height,
 					})
 				}
-				m.tideChart.DrawBraille() // Draw chart with new data
+				m.tideChart.DrawBraille()
 			}
 		}
 		return m, nil
@@ -484,6 +489,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 'e' to edit/change port
 			if keyMsg.String() == "e" {
 				m.state = StateSavedPorts
+				return m, nil
+			}
+			// 'r' to refresh data
+			if keyMsg.String() == "r" {
+				if m.selectedZone != nil && m.location != nil {
+					m.loadingWeather = true
+					m.loadingAlerts = true
+					return m, tea.Batch(
+						fetchZoneWeather(m.weatherClient, m.selectedZone.Code),
+						fetchZoneAlerts(m.alertClient, m.selectedZone.Code),
+						findNearestTideStation(m.location.Latitude, m.location.Longitude),
+					)
+				}
 				return m, nil
 			}
 			// Tab to switch panes
@@ -795,7 +813,7 @@ func (m Model) renderWeatherView() string {
 		content = lipgloss.JoinVertical(lipgloss.Left, boxHeaderStyle.Render("🌊 TIDES"), tideInfo)
 	}
 	
-	return lipgloss.JoinVertical(lipgloss.Left, header, loc, "", tabBar, "", boxStyle.Render(content), "", helpStyle.Render("e: Edit Port • Tab: Switch tab • q: Quit"))
+	return lipgloss.JoinVertical(lipgloss.Left, header, loc, "", tabBar, "", boxStyle.Render(content), "", helpStyle.Render("e: Edit Port • r: Refresh • Tab: Switch tab • q: Quit"))
 }
 
 func (m Model) renderWeatherSimple() string {
