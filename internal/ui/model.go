@@ -120,7 +120,7 @@ func NewModel(initialStationCode, initialLocation, initialPortName string) Model
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	tc := timeserieslinechart.New(50, 15)
+	tc := timeserieslinechart.New(80, 15) // Initial size, will be resized on first WindowSizeMsg
 	
 	return Model{
 		state:         StateLoading, // Start in loading to check for saved ports
@@ -208,6 +208,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.state == StateSavedPorts {
 			m.portList.SetSize(msg.Width-4, msg.Height-10)
+		}
+		// Update tide chart size based on terminal width
+		chartWidth := msg.Width - 8 // Leave some padding
+		if chartWidth < 40 {
+			chartWidth = 40 // Minimum width
+		}
+		m.tideChart = timeserieslinechart.New(chartWidth, 15)
+		// If we have tide data, redraw the chart
+		if m.tides != nil {
+			m.tideChart.Clear()
+			for _, event := range m.tides.Events {
+				m.tideChart.Push(timeserieslinechart.TimePoint{
+					Time:  event.Time,
+					Value: event.Height,
+				})
+			}
+			m.tideChart.DrawBraille()
 		}
 		return m, nil
 	}

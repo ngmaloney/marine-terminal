@@ -310,89 +310,6 @@ marine-terminal/
 └── CLAUDE.md             # Development guide for Claude Code
 ```
 
-### Running the Test Suite
-
-**Run all tests:**
-```bash
-go test ./...
-```
-
-**Run tests with verbose output:**
-```bash
-go test ./... -v
-```
-
-**Run tests with coverage:**
-```bash
-go test ./... -cover
-```
-
-**Run tests for a specific package:**
-```bash
-# Test only models
-go test ./internal/models/... -v
-
-# Test only NOAA API clients
-go test ./internal/noaa/... -v
-
-# Test only UI components
-go test ./internal/ui/... -v
-
-# Test only port search
-go test ./internal/ports/... -v
-```
-
-**Run integration tests:**
-```bash
-go test ./internal/ui/... -v -run TestIntegration
-```
-
-**Generate detailed coverage report:**
-```bash
-# Generate coverage file
-go test ./... -coverprofile=coverage.out
-
-# View coverage in terminal
-go tool cover -func=coverage.out
-
-# Generate HTML coverage report
-go tool cover -html=coverage.out
-```
-
-**Run tests with race detector:**
-```bash
-go test ./... -race
-```
-
-**Run a specific test:**
-```bash
-# Run only the search and fetch integration test
-go test ./internal/ui/... -v -run TestIntegration_SearchAndFetchData
-
-# Run only error handling tests
-go test ./internal/ui/... -v -run TestIntegration_ErrorHandling
-```
-
-### Expected Test Results
-
-When you run `go test ./... -cover`, you should see:
-
-```
-ok      github.com/ngmaloney/marine-terminal/internal/models    coverage: 100.0%
-ok      github.com/ngmaloney/marine-terminal/internal/noaa      coverage: 84.8%
-ok      github.com/ngmaloney/marine-terminal/internal/ports     coverage: 100.0%
-ok      github.com/ngmaloney/marine-terminal/internal/ui        coverage: 42.7%
-```
-
-**Total: 88 test cases, all passing**
-
-### Test Coverage Breakdown
-
-- **models**: 100.0% - Data structures for weather, tides, alerts, ports
-- **ports**: 100.0% - Port search functionality
-- **noaa**: 84.8% - NOAA API clients (weather, tides, alerts)
-- **ui**: 42.7% - UI components and integration tests
-
 ## Data Sources
 
 - **Stations**: [NOAA CO-OPS Metadata API](https://api.tidesandcurrents.noaa.gov/mdapi/prod/)
@@ -430,9 +347,8 @@ The application uses a SQLite database (`data/marine-terminal.db`) that stores:
 ## Contributing
 
 Contributions are welcome! Please ensure:
-- All tests pass: `go test ./...`
+- All tests pass: `task test`
 - Code is formatted: `go fmt ./...`
-- New features include tests (aim for 80%+ coverage)
 - Follow Go best practices
 
 See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
@@ -440,55 +356,6 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 ## License
 
 This project is provided as-is for educational and personal use.
-
-## Troubleshooting
-
-### Build Errors
-
-**Error: "cannot find package"**
-
-If you see errors like `cannot find package "github.com/charmbracelet/bubbletea"`, run:
-
-```bash
-go mod download
-go mod tidy
-```
-
-Then try building again.
-
-
-
-### Data Provisioning Issues
-
-**Error: "Marine zones database not found" keeps appearing**
-
-If the database fails to download or build, try manual provisioning:
-
-```bash
-# Remove any partial files
-rm -rf data/
-
-# Check internet connection
-curl -I https://www.weather.gov/source/gis/Shapefiles/WSOM/mz18mr25.zip
-
-# Run with verbose output
-go run test_nearby_zones.go
-```
-
-**Database file is corrupted**
-
-Remove and re-provision:
-```bash
-rm -rf data/
-./marine-terminal  # Will auto-provision on startup
-```
-
-**Slow download**
-
-The shapefile is ~12 MB and downloads from NOAA servers. If the download is slow:
-- Check your internet connection
-- Try again later (NOAA servers may be busy)
-- The download only happens once
 
 ## Acknowledgments
 
