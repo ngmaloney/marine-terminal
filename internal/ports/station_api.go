@@ -17,93 +17,6 @@ const (
 	stationAPIBaseURL = "https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi"
 )
 
-// zipCodeToCity maps ZIP codes to city names for station lookup
-var zipCodeToCity = map[string]string{
-	// Massachusetts - Cape Cod area
-	"02633": "chatham", // Chatham
-	"02634": "chatham",
-	"02539": "woods hole", // Woods Hole
-	"02554": "nantucket",  // Nantucket
-	"02564": "nantucket",
-	"02108": "boston", // Boston
-	"02109": "boston",
-	"02110": "boston",
-	"02111": "boston",
-
-	// Seattle area
-	"98101": "seattle",
-	"98102": "seattle",
-	"98103": "seattle",
-	"98104": "seattle",
-	"98105": "seattle",
-	"98106": "seattle",
-	"98107": "seattle",
-	"98108": "seattle",
-	"98109": "seattle",
-	"98110": "seattle",
-	"98121": "seattle",
-	"98122": "seattle",
-
-	// San Francisco area
-	"94102": "san francisco",
-	"94103": "san francisco",
-	"94104": "san francisco",
-	"94105": "san francisco",
-	"94107": "san francisco",
-	"94108": "san francisco",
-	"94109": "san francisco",
-	"94110": "san francisco",
-	"94111": "san francisco",
-	"94112": "san francisco",
-
-	// San Diego area
-	"92101": "san diego",
-	"92102": "san diego",
-	"92103": "san diego",
-	"92104": "san diego",
-	"92105": "san diego",
-
-	// New York area
-	"10001": "new york",
-	"10002": "new york",
-	"10003": "new york",
-	"10004": "new york",
-	"10005": "new york",
-	"10006": "new york",
-	"10007": "new york",
-
-	// Galveston, TX
-	"77550": "galveston",
-	"77551": "galveston",
-	"77553": "galveston",
-
-	// Panama City, FL
-	"32401": "panama city",
-	"32402": "panama city",
-	"32403": "panama city",
-
-	// Providence, RI
-	"02901": "providence",
-	"02902": "providence",
-	"02903": "providence",
-	"02904": "providence",
-
-	// Bridgeport, CT
-	"06601": "bridgeport",
-	"06604": "bridgeport",
-	"06605": "bridgeport",
-
-	// Astoria, OR
-	"97103": "astoria",
-
-	// Wilmington, NC
-	"28401": "wilmington",
-	"28402": "wilmington",
-	"28403": "wilmington",
-	"28404": "wilmington",
-	"28405": "wilmington",
-}
-
 // NOAAStationClient uses the NOAA Metadata API to search for stations
 type NOAAStationClient struct {
 	httpClient     *http.Client
@@ -155,12 +68,6 @@ func (c *NOAAStationClient) SearchByLocation(ctx context.Context, query string) 
 	}
 	c.cacheMu.RUnlock()
 
-	// Check if query is a ZIP code and convert to city name
-	originalQuery := query
-	if cityName, ok := zipCodeToCity[query]; ok {
-		query = cityName
-	}
-
 	// Determine search strategy
 	var stations []models.Port
 	var err error
@@ -169,7 +76,7 @@ func (c *NOAAStationClient) SearchByLocation(ctx context.Context, query string) 
 	if len(query) == 2 {
 		stations, err = c.searchByState(ctx, strings.ToUpper(query))
 	} else {
-		// Try to extract state abbreviation from query
+		// Search by name/city
 		stations, err = c.searchByName(ctx, query)
 	}
 
@@ -177,17 +84,22 @@ func (c *NOAAStationClient) SearchByLocation(ctx context.Context, query string) 
 		return nil, err
 	}
 
+	// If no exact matches, try to find nearby stations for known marine areas
 	if len(stations) == 0 {
-		return nil, fmt.Errorf("no stations found for '%s'. Try: city name, state (MA, CA, WA), or ZIP code", query)
+		stations = c.findNearbyMarineStations(ctx, query)
+	}
+
+	if len(stations) == 0 {
+		return nil, fmt.Errorf("no stations found for '%s'. Try: city name or state abbreviation (MA, CA, WA)", query)
 	}
 
 	// Populate marine zones for results
 	stations = PopulateMarineZones(ctx, stations)
 
-	// Cache results using original query
+	// Cache results
 	c.cacheMu.Lock()
-	c.cache[originalQuery] = stations
-	c.cacheTime[originalQuery] = time.Now()
+	c.cache[query] = stations
+	c.cacheTime[query] = time.Now()
 	c.cacheMu.Unlock()
 
 	return stations, nil
@@ -253,21 +165,56 @@ func (c *NOAAStationClient) searchByName(ctx context.Context, query string) ([]m
 		return nil, err
 	}
 
+	// Parse query to extract city and optional state
+	// Format: "City" or "City, State" or "City State" or "City,State"
+	var cityQuery, stateQuery string
+
+	// Try to split by comma first
+	if idx := strings.Index(query, ","); idx > 0 {
+		cityQuery = strings.TrimSpace(query[:idx])
+		stateQuery = strings.TrimSpace(query[idx+1:])
+		stateQuery = strings.ToUpper(stateQuery) // States are uppercase
+	} else {
+		// Try to split by space and check if last part is a state abbreviation
+		parts := strings.Fields(query)
+		if len(parts) >= 2 {
+			lastPart := strings.ToUpper(parts[len(parts)-1])
+			if len(lastPart) == 2 {
+				// Likely a state abbreviation
+				stateQuery = lastPart
+				cityQuery = strings.Join(parts[:len(parts)-1], " ")
+			} else {
+				cityQuery = query
+			}
+		} else {
+			cityQuery = query
+		}
+	}
+
 	// Search through cached stations
 	c.stationsMu.RLock()
 	defer c.stationsMu.RUnlock()
 
 	var results []models.Port
 	for _, station := range c.allStations {
-		// Check if matches query
-		if strings.Contains(strings.ToLower(station.Name), query) ||
-			strings.Contains(strings.ToLower(station.City), query) {
-			results = append(results, station)
+		// Check if city matches
+		cityMatch := strings.Contains(strings.ToLower(station.Name), cityQuery) ||
+			strings.Contains(strings.ToLower(station.City), cityQuery)
 
-			// Limit results to avoid overwhelming the user
-			if len(results) >= 20 {
-				break
+		// If state was specified, also check state
+		if stateQuery != "" {
+			if cityMatch && station.State == stateQuery {
+				results = append(results, station)
 			}
+		} else {
+			if cityMatch {
+				results = append(results, station)
+			}
+		}
+
+		// Limit results to avoid overwhelming the user
+		if len(results) >= 20 {
+			break
 		}
 	}
 
@@ -320,6 +267,31 @@ func (c *NOAAStationClient) fetchStations(ctx context.Context, params url.Values
 	}
 
 	return ports, nil
+}
+
+// findNearbyMarineStations finds stations near a given location by searching broader areas
+func (c *NOAAStationClient) findNearbyMarineStations(ctx context.Context, query string) []models.Port {
+	// Extract state if provided
+	var stateQuery string
+	if idx := strings.Index(query, ","); idx > 0 {
+		stateQuery = strings.TrimSpace(query[idx+1:])
+		stateQuery = strings.ToUpper(stateQuery)
+	}
+
+	// If state was provided, search for all stations in that state
+	// This will show nearby coastal stations
+	if stateQuery != "" && len(stateQuery) == 2 {
+		stations, err := c.searchByState(ctx, stateQuery)
+		if err == nil && len(stations) > 0 {
+			// Limit to first 5 stations
+			if len(stations) > 5 {
+				stations = stations[:5]
+			}
+			return stations
+		}
+	}
+
+	return nil
 }
 
 // GetPortByID retrieves a specific port by station ID

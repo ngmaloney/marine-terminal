@@ -19,6 +19,7 @@ A terminal-based application for displaying NOAA weather and tide information fo
 ### Prerequisites
 
 - Go 1.21 or later
+- (Optional) [Task](https://taskfile.dev) - Modern task runner for development
 
 ### Build from Source
 
@@ -39,16 +40,46 @@ GO111MODULE=on go build -o mariner-tui ./cmd/mariner-tui
 
 **Note**: If you're using an older version of Go, you may need to set `GO111MODULE=on` to enable module support.
 
-## Usage
+### First Run: Automatic Data Provisioning
 
-### Running the Demo
-
-To see the application with sample data:
+The application automatically downloads and configures marine zone data on first run:
 
 ```bash
-GO111MODULE=on go build -o mariner-tui-demo ./cmd/mariner-tui-demo
-./mariner-tui-demo
+./mariner-tui
 ```
+
+**What happens on first run:**
+1. Downloads NOAA marine zones shapefile (~12 MB)
+2. Downloads zipcode CSV data (~42,000 zipcodes)
+3. Builds SQLite database with 566+ marine forecast zones and zipcode data
+4. Creates `data/mariner.db` (~32 MB)
+5. Cleans up temporary files
+
+**Total time:** ~1-2 seconds
+
+**Subsequent runs:** Instant - uses existing database
+
+The marine zones database is **not** included in the repository and will be downloaded automatically when needed. No manual setup required!
+
+### Manual Data Provisioning
+
+The database provisions automatically, but you can verify or rebuild it:
+
+```bash
+# Remove database to trigger re-provisioning
+rm -rf data/
+
+# Run any application that uses zones
+GO111MODULE=on go run test_nearby_zones.go
+```
+
+The provisioning will:
+- Download from: `https://www.weather.gov/source/gis/Shapefiles/WSOM/mz18mr25.zip`
+- Extract marine zone boundaries (shapefiles)
+- Build indexed SQLite database
+- Store zone centers for distance calculations
+
+## Usage
 
 ### Quick Start Guide
 
@@ -127,18 +158,93 @@ The application provides access to **all active NOAA tide prediction stations** 
 
 ## Development
 
+### Using Task (Recommended)
+
+This project uses [Task](https://taskfile.dev) for common development tasks. Task is a modern alternative to Make, written in Go.
+
+**Install Task:**
+```bash
+# macOS
+brew install go-task/tap/go-task
+
+# Or using Go
+go install github.com/go-task/task/v3/cmd/task@latest
+```
+
+**Common Commands:**
+```bash
+# Show all available tasks
+task --list
+
+# Build the application
+task build
+
+# Run the application
+task run
+
+# Run tests
+task test
+
+# Run tests with coverage
+task test:coverage
+
+# Format and lint code
+task dev
+
+# Check data provisioning status
+task data:check
+
+# Provision marine zones database
+task data:provision
+
+# Clean all generated files
+task clean:all
+
+# Show project info
+task info
+```
+
+**Quick Development Workflow:**
+```bash
+# Format, lint, and test in one command
+task dev
+
+# Build and run
+task build run
+
+# Full CI check (lint + coverage + race detection)
+task ci
+```
+
+### Manual Build (Without Task)
+
+If you prefer not to use Task, you can use standard Go commands:
+
+```bash
+# Build
+GO111MODULE=on go build -o mariner-tui ./cmd/mariner-tui
+
+# Run
+GO111MODULE=on go run ./cmd/mariner-tui
+
+# Test
+GO111MODULE=on go test ./...
+```
+
 ### Project Structure
 
 ```
 mariner-tui/
 ├── cmd/
-│   ├── mariner-tui/      # Main application
-│   └── mariner-tui-demo/ # Demo with mock data
+│   └── mariner-tui/      # Main application
 ├── internal/
 │   ├── models/           # Data models (Weather, Tide, Alert, Port)
 │   ├── noaa/             # NOAA API clients
-│   ├── ports/            # Port search functionality
+│   ├── ports/            # Port search and marine zone integration
+│   ├── zonelookup/       # Marine zones database and provisioning
 │   └── ui/               # Bubble Tea UI components
+├── data/                 # Auto-generated (excluded from git)
+│   └── mariner.db        # SQLite database with marine zones and zipcodes
 ├── testdata/             # Test fixtures
 └── CLAUDE.md             # Development guide for Claude Code
 ```
@@ -229,15 +335,30 @@ ok      github.com/ngmaloney/mariner-tui/internal/ui        coverage: 42.7%
 ## Data Sources
 
 - **Stations**: [NOAA CO-OPS Metadata API](https://api.tidesandcurrents.noaa.gov/mdapi/prod/)
+- **Marine Zones**: [NOAA Marine Zones Shapefile](https://www.weather.gov/gis/MarineZones) (auto-downloaded)
 - **Weather**: [NOAA Weather API](https://www.weather.gov/documentation/services-web-api)
 - **Tides**: [NOAA CO-OPS API](https://tidesandcurrents.noaa.gov/api/)
 - **Alerts**: [NOAA Weather Alerts API](https://www.weather.gov/documentation/services-web-api)
+
+### Marine Zones Database
+
+The application uses NOAA's official marine forecast zone boundaries to determine which zones are near a given location. The marine zones database:
+
+- **Auto-provisions** on first run (no manual setup)
+- **566+ zones** covering all US coastal waters
+- **42,000+ zipcodes** for fast location lookup
+- **Distance-based lookup** - finds zones within configurable radius
+- **Sorted by proximity** - shows nearest zones first
+- **No static data** - all data from official NOAA shapefiles and CSV sources
+- **Stored locally** in `data/mariner.db` (excluded from git)
 
 ## Technologies
 
 - **[Bubble Tea](https://github.com/charmbracelet/bubbletea)**: Terminal UI framework (Elm Architecture)
 - **[Lipgloss](https://github.com/charmbracelet/lipgloss)**: Styling and layout
 - **[Bubbles](https://github.com/charmbracelet/bubbles)**: TUI components
+- **[modernc.org/sqlite](https://gitlab.com/cznic/sqlite)**: Pure Go SQLite (no CGO required)
+- **[go-shp](https://github.com/jonas-p/go-shp)**: Shapefile reader for GIS data
 
 ## Contributing
 
@@ -276,6 +397,38 @@ export GO111MODULE=on
 ```
 
 Or prefix all go commands with `GO111MODULE=on`.
+
+### Data Provisioning Issues
+
+**Error: "Marine zones database not found" keeps appearing**
+
+If the database fails to download or build, try manual provisioning:
+
+```bash
+# Remove any partial files
+rm -rf data/
+
+# Check internet connection
+curl -I https://www.weather.gov/source/gis/Shapefiles/WSOM/mz18mr25.zip
+
+# Run with verbose output
+GO111MODULE=on go run test_nearby_zones.go
+```
+
+**Database file is corrupted**
+
+Remove and re-provision:
+```bash
+rm -rf data/
+./mariner-tui  # Will auto-provision on startup
+```
+
+**Slow download**
+
+The shapefile is ~12 MB and downloads from NOAA servers. If the download is slow:
+- Check your internet connection
+- Try again later (NOAA servers may be busy)
+- The download only happens once
 
 ## Acknowledgments
 

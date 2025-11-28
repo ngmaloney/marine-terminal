@@ -1,0 +1,61 @@
+version: '3'
+
+env:
+  GO111MODULE: on
+
+tasks:
+  default:
+    desc: List all tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the application
+    cmds:
+      - go build -o mariner-tui ./cmd/mariner-tui
+
+  run:
+    desc: Run the application
+    cmds:
+      - go run ./cmd/mariner-tui
+
+  test:
+    desc: Run tests
+    cmds:
+      - go test ./...
+
+  test-v:
+    desc: Run tests verbose
+    cmds:
+      - go test -v ./...
+
+  test-coverage:
+    desc: Run tests with coverage
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out
+
+  fmt:
+    desc: Format code
+    cmds:
+      - go fmt ./...
+
+  lint:
+    desc: Lint code
+    cmds:
+      - go vet ./...
+
+  deadcode:
+    desc: Check for dead/unused code
+    cmds:
+      - go run golang.org/x/tools/cmd/deadcode@latest -test ./...
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f mariner-tui coverage.out
+
+  clean-data:
+    desc: Remove database (will re-download on next run)
+    cmds:
+      - rm -rf data/

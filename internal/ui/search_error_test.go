@@ -1,16 +1,18 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ngmaloney/mariner-tui/internal/geocoding"
 )
 
-// TestSearch_ErrorRecovery tests that users can recover from search errors
+// TestSearch_ErrorRecovery tests that users can recover from geocoding errors
 func TestSearch_ErrorRecovery(t *testing.T) {
 	m := NewModel()
 
-	// Step 1: User types invalid search
+	// Step 1: User types invalid location
 	for _, char := range "InvalidCity123" {
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}}
 		updatedModel, _ := m.Update(msg)
@@ -21,61 +23,46 @@ func TestSearch_ErrorRecovery(t *testing.T) {
 		t.Errorf("searchInput.Value() = %s, want 'InvalidCity123'", m.searchInput.Value())
 	}
 
-	// Step 2: User presses Enter - search fails
+	// Step 2: User presses Enter - triggers geocoding
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 	updatedModel, _ := m.Update(enterMsg)
 	m = updatedModel.(Model)
 
-	// Should have error
-	if m.err == nil {
-		t.Error("Expected error for invalid search")
+	// Should transition to loading state
+	if m.state != StateLoading {
+		t.Errorf("state = %v, want StateLoading", m.state)
 	}
 
-	// Should still be in search state (not error state)
-	if m.state != StatePortSearch {
-		t.Errorf("state = %v, want StatePortSearch (should stay in search on error)", m.state)
-	}
-
-	// Step 3: User starts typing again - error should clear
-	backspaceMsg := tea.KeyMsg{Type: tea.KeyBackspace}
-	updatedModel, _ = m.Update(backspaceMsg)
+	// Step 3: Simulate geocoding failure
+	geocodeMsg := geocodeMsg{err: fmt.Errorf("location not found")}
+	updatedModel, _ = m.Update(geocodeMsg)
 	m = updatedModel.(Model)
 
-	if m.err != nil {
-		t.Error("Error should be cleared when user modifies search")
+	// Should have error
+	if m.err == nil {
+		t.Error("Expected error for failed geocoding")
 	}
 
-	// Step 4: Clear input and type valid search
-	m.searchInput.SetValue("") // Clear previous query
-	for _, char := range "Seattle" {
+	// Should transition to error state
+	if m.state != StateError {
+		t.Errorf("state = %v, want StateError", m.state)
+	}
+
+	// Step 4: User starts typing again - should return to search and clear error
+	for _, char := range "02633" {
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}}
 		updatedModel, _ := m.Update(msg)
 		m = updatedModel.(Model)
 	}
 
-	// Step 5: User presses Enter - should succeed
-	enterMsg = tea.KeyMsg{Type: tea.KeyEnter}
-	updatedModel, cmd := m.Update(enterMsg)
-	m = updatedModel.(Model)
-
-	// Should have no error
+	// Error should be cleared
 	if m.err != nil {
-		t.Errorf("Unexpected error after valid search: %v", m.err)
+		t.Error("Error should be cleared when user modifies search")
 	}
 
-	// Should transition to display
-	if m.state != StateDisplay {
-		t.Errorf("state = %v, want StateDisplay", m.state)
-	}
-
-	// Should have selected port
-	if m.currentPort == nil {
-		t.Error("Expected port to be selected")
-	}
-
-	// Should return command to fetch data
-	if cmd == nil {
-		t.Error("Expected command to fetch data")
+	// Should return to search state
+	if m.state != StateSearch {
+		t.Errorf("state = %v, want StateSearch (typing should return to search)", m.state)
 	}
 }
 
@@ -89,46 +76,70 @@ func TestSearch_EmptyQueryHandling(t *testing.T) {
 	m = updatedModel.(Model)
 
 	// Should stay in search state
-	if m.state != StatePortSearch {
-		t.Errorf("state = %v, want StatePortSearch", m.state)
+	if m.state != StateSearch {
+		t.Errorf("state = %v, want StateSearch", m.state)
 	}
 
 	// Should not have error
 	if m.err != nil {
 		t.Error("Should not error on empty query, just do nothing")
 	}
+
+	// Should not have triggered any command
+	if m.location != nil {
+		t.Error("Should not have geocoded empty query")
+	}
 }
 
-// TestSearch_StateAbbreviation tests state abbreviation search functionality
-func TestSearch_StateAbbreviation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping API integration test in short mode")
-	}
-
+// TestSearch_ZipcodeSearch tests zipcode search functionality
+func TestSearch_ZipcodeSearch(t *testing.T) {
 	m := NewModel()
 
-	// Search by state abbreviation
-	for _, char := range "MA" {
+	// Search by zipcode
+	for _, char := range "02633" {
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}}
 		updatedModel, _ := m.Update(msg)
 		m = updatedModel.(Model)
 	}
 
+	if m.searchInput.Value() != "02633" {
+		t.Errorf("searchInput.Value() = %s, want '02633'", m.searchInput.Value())
+	}
+
+	// Press Enter to trigger geocoding
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 	updatedModel, _ := m.Update(enterMsg)
 	m = updatedModel.(Model)
 
-	// Should find Massachusetts stations
-	if m.currentPort == nil {
-		t.Fatal("Expected to find port by state abbreviation")
+	// Should transition to loading state
+	if m.state != StateLoading {
+		t.Errorf("state = %v, want StateLoading", m.state)
+	}
+}
+
+// TestSearch_NoZonesFound tests handling when no zones are found near location
+func TestSearch_NoZonesFound(t *testing.T) {
+	m := NewModel()
+	m.state = StateLoading
+
+	// Simulate successful geocoding
+	mockLocation := &geocoding.Location{
+		Latitude:  90.0, // North Pole - no marine zones
+		Longitude: 0.0,
+		Name:      "North Pole",
+	}
+	geocodeMsg := geocodeMsg{location: mockLocation}
+	updatedModel, _ := m.Update(geocodeMsg)
+	m = updatedModel.(Model)
+
+	// Location should be set
+	if m.location == nil {
+		t.Fatal("Expected location to be set")
 	}
 
-	if m.currentPort.State != "MA" {
-		t.Errorf("State MA should find Massachusetts ports, got %s", m.currentPort.State)
-	}
-
-	// Should be in display state
-	if m.state != StateDisplay {
-		t.Errorf("state = %v, want StateDisplay", m.state)
+	// Should trigger zone search (we can't test the full flow without the database,
+	// but we can verify the location was stored)
+	if m.location.Name != "North Pole" {
+		t.Errorf("location.Name = %s, want 'North Pole'", m.location.Name)
 	}
 }

@@ -4,14 +4,14 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/ngmaloney/mariner-tui/internal/models"
+	"github.com/ngmaloney/mariner-tui/internal/zonelookup"
 )
 
 func TestNewModel(t *testing.T) {
 	m := NewModel()
 
-	if m.state != StatePortSearch {
-		t.Errorf("NewModel() state = %v, want StatePortSearch", m.state)
+	if m.state != StateSearch {
+		t.Errorf("NewModel() state = %v, want StateSearch", m.state)
 	}
 
 	if m.activePane != PaneWeather {
@@ -65,9 +65,9 @@ func TestModel_CtrlC_Quits(t *testing.T) {
 func TestModel_DisplayStateKeyHandling(t *testing.T) {
 	m := NewModel()
 	m.state = StateDisplay
-	m.currentPort = &models.Port{Name: "Test", State: "WA"}
+	m.selectedZone = &zonelookup.ZoneInfo{Code: "ANZ251", Name: "Cape Cod Bay"}
 
-	// Tab key should be handled by textinput (no pane switching)
+	// Tab key should cycle through panes
 	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updatedModel.(Model)
 
@@ -76,13 +76,9 @@ func TestModel_DisplayStateKeyHandling(t *testing.T) {
 		t.Errorf("After tab, state = %v, want StateDisplay", m.state)
 	}
 
-	// Typing should work in display state
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
-	updatedModel, _ = m.Update(msg)
-	m = updatedModel.(Model)
-
-	if m.searchInput.Value() != "a" {
-		t.Errorf("Expected search input to accept typing in display state, got '%s'", m.searchInput.Value())
+	// Active pane should have changed
+	if m.activePane != PaneAlerts {
+		t.Errorf("After tab, activePane = %v, want PaneAlerts", m.activePane)
 	}
 }
 
@@ -167,56 +163,35 @@ func TestEnterKeyWithEmptyInput(t *testing.T) {
 	m = updatedModel.(Model)
 
 	// Should still be in search state
-	if m.state != StatePortSearch {
-		t.Errorf("Expected to remain in StatePortSearch, got %v", m.state)
+	if m.state != StateSearch {
+		t.Errorf("Expected to remain in StateSearch, got %v", m.state)
 	}
 
-	// Should not have any current port
-	if m.currentPort != nil {
-		t.Error("Expected currentPort to be nil")
+	// Should not have any selected zone
+	if m.selectedZone != nil {
+		t.Error("Expected selectedZone to be nil")
 	}
 }
 
-// TestPersistentSearchInDisplay verifies search input works in display state
-func TestPersistentSearchInDisplay(t *testing.T) {
+// TestSearchAgainFromDisplay verifies 'S' key returns to search
+func TestSearchAgainFromDisplay(t *testing.T) {
 	m := NewModel()
 	m.state = StateDisplay
-	m.currentPort = &models.Port{ID: "test", Name: "Test Port", State: "MA"}
+	m.selectedZone = &zonelookup.ZoneInfo{Code: "ANZ251", Name: "Cape Cod Bay"}
 
-	// Verify search input is focused and empty
-	if !m.searchInput.Focused() {
-		t.Error("Expected search input to be focused in display state")
-	}
-
-	// Type in search input while in display state
-	for _, char := range "Seattle" {
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}}
-		updatedModel, _ := m.Update(msg)
-		m = updatedModel.(Model)
-	}
-
-	if m.searchInput.Value() != "Seattle" {
-		t.Errorf("Expected search input to be 'Seattle', got '%s'", m.searchInput.Value())
-	}
-
-	// Should still be in display state (not transitioned to search state)
-	if m.state != StateDisplay {
-		t.Errorf("Expected to remain in StateDisplay, got %v", m.state)
-	}
-
-	// Pressing Enter should trigger new search and clear input
-	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
-	updatedModel, _ := m.Update(enterMsg)
+	// Press 'S' to search again
+	sMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+	updatedModel, _ := m.Update(sMsg)
 	m = updatedModel.(Model)
 
-	// Should stay in display state (or transition to it with new port)
-	if m.state != StateDisplay {
-		t.Errorf("Expected StateDisplay after search, got %v", m.state)
+	// Should transition to search state
+	if m.state != StateSearch {
+		t.Errorf("Expected StateSearch after 's' key, got %v", m.state)
 	}
 
-	// Search input should be cleared after search
-	if m.searchInput.Value() != "" {
-		t.Errorf("Expected search input to be cleared after search, got '%s'", m.searchInput.Value())
+	// Data should be cleared
+	if m.selectedZone != nil {
+		t.Error("Expected selectedZone to be cleared")
 	}
 }
 
@@ -225,7 +200,8 @@ func TestModel_View_States(t *testing.T) {
 		name  string
 		state AppState
 	}{
-		{"port search", StatePortSearch},
+		{"search", StateSearch},
+		{"zone list", StateZoneList},
 		{"loading", StateLoading},
 		{"display", StateDisplay},
 		{"error", StateError},
@@ -239,10 +215,17 @@ func TestModel_View_States(t *testing.T) {
 			m.height = 24
 
 			if tt.state == StateDisplay {
-				m.currentPort = &models.Port{
-					Name:  "Test Port",
-					State: "CA",
+				m.selectedZone = &zonelookup.ZoneInfo{
+					Code: "ANZ251",
+					Name: "Cape Cod Bay",
 				}
+			}
+
+			if tt.state == StateZoneList {
+				m.zones = []zonelookup.ZoneInfo{
+					{Code: "ANZ251", Name: "Cape Cod Bay", Distance: 5.2},
+				}
+				m.zoneList = createZoneList(m.zones, 80, 20)
 			}
 
 			view := m.View()
@@ -263,17 +246,20 @@ func TestModel_View_InitialLoading(t *testing.T) {
 }
 
 func TestAppState_Constants(t *testing.T) {
-	if StatePortSearch != 0 {
-		t.Errorf("StatePortSearch = %d, want 0", StatePortSearch)
+	if StateSearch != 0 {
+		t.Errorf("StateSearch = %d, want 0", StateSearch)
 	}
-	if StateLoading != 1 {
-		t.Errorf("StateLoading = %d, want 1", StateLoading)
+	if StateZoneList != 1 {
+		t.Errorf("StateZoneList = %d, want 1", StateZoneList)
 	}
-	if StateDisplay != 2 {
-		t.Errorf("StateDisplay = %d, want 2", StateDisplay)
+	if StateLoading != 2 {
+		t.Errorf("StateLoading = %d, want 2", StateLoading)
 	}
-	if StateError != 3 {
-		t.Errorf("StateError = %d, want 3", StateError)
+	if StateDisplay != 3 {
+		t.Errorf("StateDisplay = %d, want 3", StateDisplay)
+	}
+	if StateError != 4 {
+		t.Errorf("StateError = %d, want 4", StateError)
 	}
 }
 
@@ -281,10 +267,7 @@ func TestActivePane_Constants(t *testing.T) {
 	if PaneWeather != 0 {
 		t.Errorf("PaneWeather = %d, want 0", PaneWeather)
 	}
-	if PaneTides != 1 {
-		t.Errorf("PaneTides = %d, want 1", PaneTides)
-	}
-	if PaneAlerts != 2 {
-		t.Errorf("PaneAlerts = %d, want 2", PaneAlerts)
+	if PaneAlerts != 1 {
+		t.Errorf("PaneAlerts = %d, want 1", PaneAlerts)
 	}
 }

@@ -2,6 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ CRITICAL: TEST-DRIVEN DEVELOPMENT REQUIREMENTS
+
+**MANDATORY FOR ALL CODE CHANGES:**
+
+1. **ALWAYS run tests after ANY code change**: `GO111MODULE=on go test ./...`
+2. **ALL tests MUST pass** before work is considered complete
+3. **Fix failing tests immediately** - do not move on to other tasks
+4. **Add tests for new functionality** before or alongside implementation
+5. **Update tests when refactoring** to match new behavior
+
+**Test Execution Protocol:**
+```bash
+# After EVERY change, run:
+GO111MODULE=on go test ./...
+
+# If any tests fail:
+# 1. Read the test failure output carefully
+# 2. Fix the code OR update the test to match correct behavior
+# 3. Re-run tests until ALL pass
+# 4. Only then is the work complete
+```
+
+**No exceptions.** Passing tests are not optional - they are the definition of working code.
+
 ## Project Overview
 
 Mariner TUI is a terminal application for displaying NOAA weather and tide information for US ports. The application retrieves and displays:
@@ -135,11 +159,21 @@ func TestParseWeatherData(t *testing.T) {
 - Use testable interfaces for external dependencies
 
 ### Running Tests
-**Always run tests after making changes:**
-1. Run `go test ./...` before committing
-2. Fix any failing tests immediately
-3. Add new tests for bug fixes to prevent regressions
-4. Run with `-race` flag to detect race conditions
+**MANDATORY - Tests must pass after EVERY change:**
+1. Run `GO111MODULE=on go test ./...` after EVERY code change
+2. **ALL tests must pass** - zero failures, zero exceptions
+3. Fix failing tests immediately - do not proceed to other work
+4. Add new tests for bug fixes to prevent regressions
+5. Run with `-race` flag to detect race conditions
+6. Never commit code with failing tests
+7. Never leave test failures for "later"
+
+**If tests fail:**
+- Stop all other work
+- Read the failure output
+- Fix the code or update tests to match correct behavior
+- Re-run tests until 100% pass
+- Only then continue with other tasks
 
 ## Go Best Practices
 

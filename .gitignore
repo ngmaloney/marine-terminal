@@ -1,0 +1,38 @@
+# Binaries
+mariner-tui
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries and temporary test scripts
+*.test
+test_*.go
+cmd/test-*/
+
+# Build artifacts
+dist/
+build/
+
+# Data files (auto-downloaded on first run)
+data/
+*.db
+*.csv
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.zip
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

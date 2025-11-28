@@ -74,4 +74,17 @@ var (
 
 	successStyle = lipgloss.NewStyle().
 			Foreground(colorSuccess)
+
+	// Section header styles
+	sectionHeaderStyle = lipgloss.NewStyle().
+				Foreground(colorPrimary).
+				Bold(true).
+				Padding(0, 1).
+				MarginTop(1)
+
+	sectionBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorBorder).
+			Padding(1, 2).
+			MarginBottom(1)
 )

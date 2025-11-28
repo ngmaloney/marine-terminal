@@ -1,25 +1,27 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/ngmaloney/mariner-tui/internal/geocoding"
 	"github.com/ngmaloney/mariner-tui/internal/models"
 	"github.com/ngmaloney/mariner-tui/internal/noaa"
-	"github.com/ngmaloney/mariner-tui/internal/ports"
+	"github.com/ngmaloney/mariner-tui/internal/zonelookup"
 )
 
 // AppState represents the current state of the application
 type AppState int
 
 const (
-	StatePortSearch AppState = iota
-	StateLoading
-	StateDisplay
-	StateError
+	StateSearch AppState = iota // Search for location (zipcode/city/state)
+	StateZoneList               // Show list of nearby marine zones
+	StateLoading                // Loading weather/alert data
+	StateDisplay                // Display weather/alerts for selected zone
+	StateError                  // Error state
 )
 
 // ActivePane represents which pane is currently focused
@@ -27,7 +29,6 @@ type ActivePane int
 
 const (
 	PaneWeather ActivePane = iota
-	PaneTides
 	PaneAlerts
 )
 
@@ -39,44 +40,45 @@ type Model struct {
 	height      int
 	err         error
 
-	// Port information
-	currentPort   *models.Port
-	searchInput   textinput.Model
-	searchResults []models.Port
-	portClient    ports.Client
+	// Search
+	searchInput textinput.Model
+	geocoder    *geocoding.Geocoder
+	searchQuery string // Last search query
+
+	// Location and zones
+	location      *geocoding.Location
+	zones         []zonelookup.ZoneInfo
+	zoneList      list.Model
+	selectedZone  *zonelookup.ZoneInfo
 
 	// API clients
 	weatherClient noaa.WeatherClient
-	tideClient    noaa.TideClient
 	alertClient   noaa.AlertClient
 
 	// Data
 	weather  *models.MarineConditions
 	forecast *models.ThreeDayForecast
-	tides    *models.TideData
 	alerts   *models.AlertData
 
 	// Loading states
 	loadingWeather bool
-	loadingTides   bool
 	loadingAlerts  bool
 }
 
 // NewModel creates a new application model
 func NewModel() Model {
 	ti := textinput.New()
-	ti.Placeholder = "Enter city, state, or ZIP code..."
+	ti.Placeholder = "Enter zipcode or city, state (e.g. 02633 or Chatham, MA)..."
 	ti.Focus()
 	ti.CharLimit = 100
-	ti.Width = 50
+	ti.Width = 60
 
 	return Model{
-		state:         StatePortSearch,
+		state:         StateSearch,
 		activePane:    PaneWeather,
 		searchInput:   ti,
-		portClient:    ports.NewNOAAStationClient(),
+		geocoder:      geocoding.NewGeocoder(),
 		weatherClient: noaa.NewWeatherClient(),
-		tideClient:    noaa.NewTideClient(),
 		alertClient:   noaa.NewAlertClient(),
 	}
 }
@@ -90,137 +92,207 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	// Handle data fetch messages
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
+	// Handle window size
+	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
-		return m, nil
-
-	case weatherFetchedMsg:
-		m.loadingWeather = false
-		if msg.err != nil {
-			// Keep existing data if fetch failed
-			return m, nil
+		// Update zone list size if it exists
+		if m.state == StateZoneList {
+			m.zoneList.SetSize(msg.Width-4, msg.Height-10)
 		}
-		m.weather = msg.conditions
-		m.forecast = msg.forecast
 		return m, nil
+	}
 
-	case tidesFetchedMsg:
-		m.loadingTides = false
-		if msg.err != nil {
-			// Keep existing data if fetch failed
-			return m, nil
-		}
-		m.tides = msg.tides
-		return m, nil
-
-	case alertsFetchedMsg:
-		m.loadingAlerts = false
-		if msg.err != nil {
-			// Keep existing data if fetch failed
-			return m, nil
-		}
-		m.alerts = msg.alerts
-		return m, nil
-
+	// Handle custom messages
+	switch msg := msg.(type) {
 	case errMsg:
 		m.err = msg.err
 		m.state = StateError
 		return m, nil
+
+	case geocodeMsg:
+		if msg.err != nil {
+			m.err = fmt.Errorf("geocoding failed: %w", msg.err)
+			m.state = StateError
+			return m, nil
+		}
+		m.location = msg.location
+		// Find nearby zones
+		return m, findNearbyZones(msg.location.Latitude, msg.location.Longitude)
+
+	case zonesFoundMsg:
+		if msg.err != nil {
+			m.err = fmt.Errorf("finding zones failed: %w", msg.err)
+			m.state = StateError
+			return m, nil
+		}
+		if len(msg.zones) == 0 {
+			m.err = fmt.Errorf("no marine zones found near '%s'", m.searchQuery)
+			m.state = StateError
+			return m, nil
+		}
+		m.zones = msg.zones
+		m.zoneList = createZoneList(msg.zones, m.width-4, m.height-10)
+		m.state = StateZoneList
+		return m, nil
+
+	case zoneWeatherFetchedMsg:
+		m.loadingWeather = false
+		if msg.err != nil {
+			// Keep existing data if fetch failed
+		} else {
+			m.weather = msg.conditions
+			m.forecast = msg.forecast
+		}
+		// Transition to display if all done
+		if !m.loadingWeather && !m.loadingAlerts {
+			m.state = StateDisplay
+		}
+		return m, nil
+
+	case zoneAlertsFetchedMsg:
+		m.loadingAlerts = false
+		if msg.err != nil {
+			// Keep existing data if fetch failed
+		} else {
+			m.alerts = msg.alerts
+		}
+		// Transition to display if all done
+		if !m.loadingWeather && !m.loadingAlerts {
+			m.state = StateDisplay
+		}
+		return m, nil
 	}
 
-	// Handle keyboard input based on state
+	// Handle keyboard input
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		// Global keys first
-		if keyMsg.String() == "ctrl+c" {
+		// Global keys
+		if keyMsg.String() == "ctrl+c" || keyMsg.String() == "q" {
 			return m, tea.Quit
 		}
 
-		// State-specific keyboard handling
+		// State-specific handling
 		switch m.state {
-		case StatePortSearch:
-			// Handle Enter key for search
-			if keyMsg.Type == tea.KeyEnter {
-				return m.handlePortSearchKeys(keyMsg)
-			}
-			// Let textinput handle all other keys
-			m.searchInput, cmd = m.searchInput.Update(msg)
-			// Clear error when user types
-			if m.err != nil {
-				m.err = nil
-			}
-			return m, cmd
+		case StateSearch:
+			return m.handleSearchInput(keyMsg)
+
+		case StateZoneList:
+			return m.handleZoneList(msg)
 
 		case StateDisplay:
-			// Handle Enter key for new search
-			if keyMsg.Type == tea.KeyEnter {
-				return m.handlePortSearchKeys(keyMsg)
+			// 's' to return to search
+			if keyMsg.String() == "s" {
+				m.state = StateSearch
+				m.searchInput.SetValue("")
+				m.searchInput.Focus()
+				// Clear all data
+				m.selectedZone = nil
+				m.weather = nil
+				m.forecast = nil
+				m.alerts = nil
+				m.location = nil
+				m.zones = nil
+				return m, textinput.Blink
 			}
-			// Let textinput handle all other keys (for search bar)
-			m.searchInput, cmd = m.searchInput.Update(msg)
-			return m, cmd
+			// Tab to switch panes
+			if keyMsg.Type == tea.KeyTab {
+				if m.activePane == PaneWeather {
+					m.activePane = PaneAlerts
+				} else {
+					m.activePane = PaneWeather
+				}
+				return m, nil
+			}
+			return m, nil
+
+		case StateError:
+			// Any key returns to search (except quit keys)
+			m.state = StateSearch
+			m.err = nil
+			m.searchInput.Focus()
+			return m, textinput.Blink
 		}
 	}
 
-	// Update textinput for non-keyboard messages
-	m.searchInput, cmd = m.searchInput.Update(msg)
+	// Update appropriate component based on state
+	switch m.state {
+	case StateSearch:
+		m.searchInput, cmd = m.searchInput.Update(msg)
+	case StateZoneList:
+		m.zoneList, cmd = m.zoneList.Update(msg)
+	}
+
 	return m, cmd
 }
 
+// handleSearchInput handles keyboard input in search state
+func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 
-// handlePortSearchKeys handles keyboard input in port search state
-func (m Model) handlePortSearchKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEnter:
-		// Perform search
+	// Clear error when typing
+	if m.err != nil && msg.Type != tea.KeyEnter {
+		m.err = nil
+	}
+
+	// Handle Enter key
+	if msg.Type == tea.KeyEnter {
 		query := m.searchInput.Value()
 		if query == "" {
 			return m, nil
 		}
-
-		ctx := context.Background()
-		results, err := m.portClient.SearchByLocation(ctx, query)
-		if err != nil {
-			// Stay in search state, show error
-			m.err = err
-			return m, nil
-		}
-
-		// Clear any previous errors
+		m.searchQuery = query
 		m.err = nil
-		m.searchResults = results
-
-		// If no results, show error
-		if len(results) == 0 {
-			m.err = fmt.Errorf("no stations found for '%s'", query)
-			return m, nil
-		}
-
-		// Select first result
-		m.currentPort = &results[0]
-		m.state = StateDisplay
-		m.loadingWeather = true
-		m.loadingTides = true
-		m.loadingAlerts = true
-		// Clear old data
-		m.weather = nil
-		m.forecast = nil
-		m.tides = nil
-		m.alerts = nil
-		// Clear search input for next search
-		m.searchInput.SetValue("")
-		// Keep search input focused for next search
-		m.searchInput.Focus()
-		// Fetch all data for this port
-		return m, tea.Batch(
-			fetchAllData(m.currentPort, m.weatherClient, m.tideClient, m.alertClient),
-			textinput.Blink,
-		)
+		m.state = StateLoading
+		// Start geocoding
+		return m, geocodeLocation(m.geocoder, query)
 	}
 
-	return m, nil
+	// Update text input
+	m.searchInput, cmd = m.searchInput.Update(msg)
+	return m, cmd
+}
+
+// handleZoneList handles keyboard input in zone list state
+func (m Model) handleZoneList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	// Check for Enter key to select zone
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.Type == tea.KeyEnter {
+			// Get selected zone
+			if item, ok := m.zoneList.SelectedItem().(zoneItem); ok {
+				m.selectedZone = &item.zone
+				m.state = StateLoading
+				m.loadingWeather = true
+				m.loadingAlerts = true
+				// Clear old data
+				m.weather = nil
+				m.forecast = nil
+				m.alerts = nil
+				// Fetch data for this zone
+				return m, tea.Batch(
+					fetchZoneWeather(m.weatherClient, m.selectedZone.Code),
+					fetchZoneAlerts(m.alertClient, m.selectedZone.Code),
+				)
+			}
+		}
+		// 's' or Esc to go back to search
+		if keyMsg.String() == "s" || keyMsg.Type == tea.KeyEsc {
+			m.state = StateSearch
+			m.searchInput.Focus()
+			return m, textinput.Blink
+		}
+	}
+
+	// Update list
+	m.zoneList, cmd = m.zoneList.Update(msg)
+
+	// Check if we transitioned to display after fetching
+	if m.state == StateLoading && !m.loadingWeather && !m.loadingAlerts {
+		m.state = StateDisplay
+	}
+
+	return m, cmd
 }
 
 
@@ -231,8 +303,10 @@ func (m Model) View() string {
 	}
 
 	switch m.state {
-	case StatePortSearch:
-		return m.viewPortSearch()
+	case StateSearch:
+		return m.viewSearch()
+	case StateZoneList:
+		return m.viewZoneList()
 	case StateLoading:
 		return m.viewLoading()
 	case StateDisplay:
@@ -244,18 +318,44 @@ func (m Model) View() string {
 	return ""
 }
 
-// viewPortSearch renders the port search view
-func (m Model) viewPortSearch() string {
+// viewError renders the error view
+func (m Model) viewError() string {
+	title := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FF6B6B")).
+		Bold(true).
+		Render("✗ Error")
+
+	var errorMsg string
+	if m.err != nil {
+		errorMsg = m.err.Error()
+	} else {
+		errorMsg = "An unknown error occurred"
+	}
+
+	help := helpStyle.Render("Press any key to return to search • Q: Quit")
+
+	var sections []string
+	sections = append(sections, title)
+	sections = append(sections, "")
+	sections = append(sections, errorMsg)
+	sections = append(sections, "")
+	sections = append(sections, help)
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+// viewSearch renders the search view
+func (m Model) viewSearch() string {
 	// Title
 	title := titleStyle.Render("⚓ Mariner TUI")
-	subtitle := mutedStyle.Render("NOAA Marine Weather & Tide Information")
+	subtitle := mutedStyle.Render("NOAA Marine Weather & Alerts")
 
 	// Search box with border
 	searchBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62")).
 		Padding(1, 2).
-		Width(54).
+		Width(64).
 		Render(m.searchInput.View())
 
 	// Error message if present
@@ -272,7 +372,7 @@ func (m Model) viewPortSearch() string {
 	help := helpStyle.Render("Press Enter to search • Ctrl+C to quit")
 
 	// Examples
-	examples := mutedStyle.Render("Examples: Chatham, 02633, Woods Hole, Seattle, MA")
+	examples := mutedStyle.Render("Examples: 02633 | Chatham, MA | Boston, MA | Seattle, WA")
 
 	// Assemble the view
 	var sections []string
@@ -294,30 +394,47 @@ func (m Model) viewPortSearch() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
+// viewZoneList renders the marine zone selection list
+func (m Model) viewZoneList() string {
+	title := titleStyle.Render("⚓ Marine Zones")
+	subtitle := mutedStyle.Render(fmt.Sprintf("Found %d zones near %s", len(m.zones), m.searchQuery))
+
+	help := helpStyle.Render("↑/↓: Navigate • Enter: Select • S/Esc: Back to search • Q: Quit")
+
+	var sections []string
+	sections = append(sections, title)
+	sections = append(sections, subtitle)
+	sections = append(sections, "")
+	sections = append(sections, m.zoneList.View())
+	sections = append(sections, "")
+	sections = append(sections, help)
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
 // viewLoading renders the loading view
 func (m Model) viewLoading() string {
-	s := "Loading weather and tide data"
-	if m.currentPort != nil {
-		s += fmt.Sprintf(" for %s, %s", m.currentPort.Name, m.currentPort.State)
+	s := "Loading marine data"
+	if m.selectedZone != nil {
+		s += fmt.Sprintf(" for %s", m.selectedZone.Code)
 	}
 	s += "...\n\n"
 
 	if m.loadingWeather {
-		s += "⏳ Fetching weather data\n"
+		s += "⏳ Fetching weather forecast\n"
 	} else {
-		s += "✓ Weather data loaded\n"
-	}
-
-	if m.loadingTides {
-		s += "⏳ Fetching tide data\n"
-	} else {
-		s += "✓ Tide data loaded\n"
+		s += "✓ Weather forecast loaded\n"
 	}
 
 	if m.loadingAlerts {
-		s += "⏳ Fetching alerts\n"
+		s += "⏳ Fetching marine alerts\n"
 	} else {
 		s += "✓ Alerts loaded\n"
+	}
+
+	// Auto-transition to display when done
+	if !m.loadingWeather && !m.loadingAlerts {
+		s += "\n✓ Ready!"
 	}
 
 	return s
@@ -325,95 +442,43 @@ func (m Model) viewLoading() string {
 
 // viewDisplay renders the main display - simple vertical layout
 func (m Model) viewDisplay() string {
-	if m.currentPort == nil {
-		return "No port selected"
+	if m.selectedZone == nil {
+		return "No zone selected"
 	}
 
 	var sections []string
 
-	// Header
-	header := titleStyle.Render(fmt.Sprintf("⚓ %s, %s", m.currentPort.Name, m.currentPort.State))
-	sections = append(sections, header, "")
+	// Header with nice styling
+	headerStyle := lipgloss.NewStyle().
+		Foreground(colorPrimary).
+		Bold(true).
+		Padding(0, 1).
+		MarginBottom(1)
+	header := headerStyle.Render(fmt.Sprintf("⚓ %s - %s", m.selectedZone.Code, m.selectedZone.Name))
+	sections = append(sections, header)
 
-	// Weather section
+	// Location info
+	if m.location != nil {
+		locationInfo := mutedStyle.Render(fmt.Sprintf("📍 %s (%.1f mi away)", m.searchQuery, m.selectedZone.Distance))
+		sections = append(sections, locationInfo, "")
+	}
+
+	// Weather/Forecast section
 	sections = append(sections,
-		labelStyle.Render("━━━ WEATHER ━━━"),
+		sectionHeaderStyle.Render("⛅ MARINE FORECAST"),
 		m.renderWeatherSimple(),
-		"",
-	)
-
-	// Tides section
-	sections = append(sections,
-		labelStyle.Render("━━━ TIDES ━━━"),
-		m.renderTideSimple(),
-		"",
 	)
 
 	// Alerts section
 	sections = append(sections,
-		labelStyle.Render("━━━ ALERTS ━━━"),
+		sectionHeaderStyle.Render("⚠️  MARINE ALERTS"),
 		m.renderAlertSimple(),
-		"",
 	)
 
-	// Search bar at bottom (always visible)
-	searchLabel := mutedStyle.Render("Search: ")
-	searchBox := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Padding(0, 1).
-		Width(50).
-		Render(m.searchInput.View())
-	searchBar := lipgloss.JoinHorizontal(lipgloss.Left, searchLabel, searchBox)
-
 	// Help text
-	help := helpStyle.Render("Enter: Search for new location • Ctrl+C: Quit")
+	help := helpStyle.Render("S: New search • Tab: Switch panes • Q: Quit")
 
-	sections = append(sections, searchBar, "", help)
+	sections = append(sections, "", help)
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
-}
-
-// viewError renders an error view
-func (m Model) viewError() string {
-	s := "Error occurred:\n\n"
-	if m.err != nil {
-		s += m.err.Error()
-	} else {
-		s += "Unknown error"
-	}
-	s += "\n\nPress Q to quit"
-	return s
-}
-
-// Setter methods for demo purposes
-
-// SetCurrentPort sets the current port
-func (m *Model) SetCurrentPort(port *models.Port) {
-	m.currentPort = port
-}
-
-// SetWeather sets the weather data
-func (m *Model) SetWeather(weather *models.MarineConditions) {
-	m.weather = weather
-}
-
-// SetForecast sets the forecast data
-func (m *Model) SetForecast(forecast *models.ThreeDayForecast) {
-	m.forecast = forecast
-}
-
-// SetTides sets the tide data
-func (m *Model) SetTides(tides *models.TideData) {
-	m.tides = tides
-}
-
-// SetAlerts sets the alert data
-func (m *Model) SetAlerts(alerts *models.AlertData) {
-	m.alerts = alerts
-}
-
-// SetState sets the application state
-func (m *Model) SetState(state AppState) {
-	m.state = state
 }
