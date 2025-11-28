@@ -18,26 +18,52 @@ const (
 	zipcodeCSVURL = "https://raw.githubusercontent.com/midwire/free_zipcode_data/develop/all_us_zipcodes.csv"
 )
 
-// ProvisionZipcodeDatabase downloads and builds the zipcode table
-func ProvisionZipcodeDatabase(dbPath string) error {
-	// Check if table already exists
+// NeedsProvisioning checks if the zipcode database needs to be provisioned
+func NeedsProvisioning(dbPath string) (bool, error) {
+	// If file doesn't exist, we need to provision
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return true, nil
+	}
+
+	// Check if zipcodes table exists
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return fmt.Errorf("opening database: %w", err)
+		return false, fmt.Errorf("opening database: %w", err)
 	}
 	defer db.Close()
 
-	// Check if zipcodes table exists
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='zipcodes'").Scan(&count)
 	if err != nil {
-		return fmt.Errorf("checking for zipcodes table: %w", err)
+		return false, fmt.Errorf("checking for zipcodes table: %w", err)
 	}
-	if count > 0 {
-		return nil // Table already exists
+	
+	return count == 0, nil
+}
+
+// ProvisionZipcodeDatabase downloads and builds the zipcode table
+func ProvisionZipcodeDatabase(dbPath string) error {
+	return ProvisionZipcodeDatabaseWithProgress(dbPath, nil)
+}
+
+// ProvisionZipcodeDatabaseWithProgress downloads and builds the zipcode table with progress updates
+func ProvisionZipcodeDatabaseWithProgress(dbPath string, progressChan chan<- string) error {
+	needs, err := NeedsProvisioning(dbPath)
+	if err != nil {
+		return err
+	}
+	if !needs {
+		return nil
+	}
+	
+	sendProgress := func(msg string) {
+		if progressChan != nil {
+			progressChan <- msg
+		}
+		log.Println(msg)
 	}
 
-	log.Println("Zipcode table not found, provisioning...")
+	sendProgress("Zipcode table not found, provisioning...")
 
 	// Create data directory if it doesn't exist
 	dataDir := filepath.Dir(dbPath)
@@ -47,19 +73,19 @@ func ProvisionZipcodeDatabase(dbPath string) error {
 
 	// Download CSV
 	csvPath := filepath.Join(dataDir, "all_us_zipcodes.csv")
-	log.Printf("Downloading zipcode data from %s...\n", zipcodeCSVURL)
+	sendProgress(fmt.Sprintf("Downloading zipcode data from %s...", zipcodeCSVURL))
 	if err := downloadZipcodeCSV(csvPath); err != nil {
 		return fmt.Errorf("downloading zipcode CSV: %w", err)
 	}
 	defer os.Remove(csvPath) // Clean up after import
 
 	// Build database
-	log.Println("Building zipcode database...")
-	if err := buildZipcodeDatabase(csvPath, dbPath); err != nil {
+	sendProgress("Building zipcode database...")
+	if err := buildZipcodeDatabase(csvPath, dbPath, progressChan); err != nil {
 		return fmt.Errorf("building database: %w", err)
 	}
 
-	log.Printf("Successfully provisioned zipcode database at %s\n", dbPath)
+	sendProgress(fmt.Sprintf("Successfully provisioned zipcode database at %s", dbPath))
 	return nil
 }
 
@@ -86,7 +112,7 @@ func downloadZipcodeCSV(filepath string) error {
 }
 
 // buildZipcodeDatabase creates a SQLite database from the CSV file
-func buildZipcodeDatabase(csvPath, dbPath string) error {
+func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) error {
 	// Open database
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -177,7 +203,11 @@ func buildZipcodeDatabase(csvPath, dbPath string) error {
 
 		count++
 		if count%5000 == 0 {
-			log.Printf("Processed %d zipcodes...\n", count)
+			msg := fmt.Sprintf("Processed %d zipcodes...", count)
+			if progressChan != nil {
+				progressChan <- msg
+			}
+			log.Println(msg)
 		}
 	}
 
@@ -186,6 +216,10 @@ func buildZipcodeDatabase(csvPath, dbPath string) error {
 		return err
 	}
 
-	log.Printf("Successfully created database with %d zipcodes\n", count)
+	msg := fmt.Sprintf("Successfully created database with %d zipcodes", count)
+	if progressChan != nil {
+		progressChan <- msg
+	}
+	log.Println(msg)
 	return nil
 }

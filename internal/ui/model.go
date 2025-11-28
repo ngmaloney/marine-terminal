@@ -4,9 +4,11 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/ngmaloney/marine-terminal/internal/database"
 	"github.com/ngmaloney/marine-terminal/internal/geocoding"
 	"github.com/ngmaloney/marine-terminal/internal/models"
 	"github.com/ngmaloney/marine-terminal/internal/noaa"
@@ -17,11 +19,12 @@ import (
 type AppState int
 
 const (
-	StateSearch AppState = iota // Search for location (zipcode/city/state)
-	StateZoneList               // Show list of nearby marine zones
-	StateLoading                // Loading weather/alert data
-	StateDisplay                // Display weather/alerts for selected zone
-	StateError                  // Error state
+	StateSearch       AppState = iota // Search for location (zipcode/city/state)
+	StateZoneList                     // Show list of nearby marine zones
+	StateLoading                      // Loading weather/alert data
+	StateDisplay                      // Display weather/alerts for selected zone
+	StateProvisioning                 // Initial data provisioning (downloading/building DB)
+	StateError                        // Error state
 )
 
 // ActivePane represents which pane is currently focused
@@ -63,6 +66,11 @@ type Model struct {
 	// Loading states
 	loadingWeather bool
 	loadingAlerts  bool
+
+	// Provisioning
+	spinner           spinner.Model
+	provisionStatus   string
+	provisionChannels *provisioningStartedMsg
 }
 
 // NewModel creates a new application model
@@ -73,18 +81,40 @@ func NewModel() Model {
 	ti.CharLimit = 100
 	ti.Width = 60
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
 	return Model{
-		state:         StateSearch,
+		state:         StateSearch, // Will be checked in Init
 		activePane:    PaneWeather,
 		searchInput:   ti,
 		geocoder:      geocoding.NewGeocoder(),
 		weatherClient: noaa.NewWeatherClient(),
 		alertClient:   noaa.NewAlertClient(),
+		spinner:       s,
 	}
 }
 
 // Init initializes the application
 func (m Model) Init() tea.Cmd {
+	dbPath := database.DBPath()
+	
+	// Check if we need to provision the database (marine zones or zipcodes)
+	zonesNeeded, err := zonelookup.NeedsProvisioning(dbPath)
+	if err != nil {
+		return textinput.Blink
+	}
+	
+	zipNeeded, err := geocoding.NeedsProvisioning(dbPath)
+	if err != nil {
+		return textinput.Blink
+	}
+
+	if zonesNeeded || zipNeeded {
+		return tea.Batch(m.spinner.Tick, initiateProvisioning())
+	}
+
 	return textinput.Blink
 }
 
@@ -109,6 +139,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.state = StateError
 		return m, nil
+
+	// Provisioning messages
+	case provisioningStartedMsg:
+		m.state = StateProvisioning
+		m.provisionStatus = "Starting data provisioning..."
+		m.provisionChannels = &msg
+		return m, tea.Batch(
+			waitForProvisionStatus(msg.progressChan),
+			waitForProvisionResult(msg.resultChan),
+		)
+
+	case provisionStatusMsg:
+		m.provisionStatus = string(msg)
+		// Continue waiting for more status updates using stored channel
+		if m.provisionChannels != nil {
+			return m, waitForProvisionStatus(m.provisionChannels.progressChan)
+		}
+		return m, nil
+
+	case provisionResultMsg:
+		m.provisionChannels = nil // clear channels
+		if msg.err != nil {
+			m.err = fmt.Errorf("provisioning failed: %w", msg.err)
+			m.state = StateError
+			return m, nil
+		}
+		// Success! Transition to search
+		m.state = StateSearch
+		m.searchInput.Focus()
+		return m, textinput.Blink
 
 	case geocodeMsg:
 		if msg.err != nil {
@@ -216,6 +276,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Update appropriate component based on state
 	switch m.state {
+	case StateProvisioning:
+		var cmdSpinner tea.Cmd
+		m.spinner, cmdSpinner = m.spinner.Update(msg)
+		
+		// Handle provisioning specific messages here to access local scope if needed, 
+		// but we can also handle them in the main switch.
+		// Let's handle the channel persistence by using a modified message type.
+		// For now, I need to update `zone_messages.go` to include the channel in the msg.
+		// I will do that in a separate step before this one compiles?
+		// No, I should do it now or rely on the `Update` logic having access to a stored channel in `Model`.
+		// storing `provisionChannels` in Model is cleaner than passing them around in messages.
+		
+		return m, cmdSpinner
+		
 	case StateSearch:
 		m.searchInput, cmd = m.searchInput.Update(msg)
 	case StateZoneList:
@@ -303,6 +377,8 @@ func (m Model) View() string {
 	}
 
 	switch m.state {
+	case StateProvisioning:
+		return m.viewProvisioning()
 	case StateSearch:
 		return m.viewSearch()
 	case StateZoneList:
@@ -316,6 +392,28 @@ func (m Model) View() string {
 	}
 
 	return ""
+}
+
+// viewProvisioning renders the initial setup screen
+func (m Model) viewProvisioning() string {
+	title := titleStyle.Render("⚓ Marine Terminal Setup")
+
+	sp := m.spinner.View()
+	status := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Render(m.provisionStatus)
+
+	info := helpStyle.Render("One-time setup: downloading marine zones database...")
+
+	return lipgloss.JoinVertical(
+		lipgloss.Center,
+		"",
+		title,
+		"",
+		fmt.Sprintf("%s %s", sp, status),
+		"",
+		info,
+	)
 }
 
 // viewError renders the error view

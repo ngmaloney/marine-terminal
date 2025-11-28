@@ -22,25 +22,52 @@ const (
 	shapefileBase  = "mz18mr25"
 )
 
-// ProvisionDatabase checks if the marine_zones table exists and creates it if not
-func ProvisionDatabase(dbPath string) error {
+// NeedsProvisioning checks if the database needs to be provisioned
+func NeedsProvisioning(dbPath string) (bool, error) {
+	// If file doesn't exist, we need to provision
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		return true, nil
+	}
+
 	// Check if marine_zones table already exists
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return fmt.Errorf("opening database: %w", err)
+		return false, fmt.Errorf("opening database: %w", err)
 	}
 	defer db.Close()
 
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='marine_zones'").Scan(&count)
 	if err != nil {
-		return fmt.Errorf("checking for marine_zones table: %w", err)
+		return false, fmt.Errorf("checking for marine_zones table: %w", err)
 	}
-	if count > 0 {
-		return nil // Table already exists
+	
+	return count == 0, nil
+}
+
+// ProvisionDatabase checks if the marine_zones table exists and creates it if not
+func ProvisionDatabase(dbPath string) error {
+	return ProvisionDatabaseWithProgress(dbPath, nil)
+}
+
+// ProvisionDatabaseWithProgress provisions the database and reports progress via channel
+func ProvisionDatabaseWithProgress(dbPath string, progressChan chan<- string) error {
+	needs, err := NeedsProvisioning(dbPath)
+	if err != nil {
+		return err
+	}
+	if !needs {
+		return nil
+	}
+	
+	sendProgress := func(msg string) {
+		if progressChan != nil {
+			progressChan <- msg
+		}
+		log.Println(msg)
 	}
 
-	log.Println("Marine zones table not found, provisioning...")
+	sendProgress("Marine zones table not found, provisioning...")
 
 	// Create data directory if it doesn't exist
 	dataDir := filepath.Dir(dbPath)
@@ -50,29 +77,29 @@ func ProvisionDatabase(dbPath string) error {
 
 	// Download shapefile
 	zipPath := filepath.Join(dataDir, shapefileBase+".zip")
-	log.Printf("Downloading NOAA marine zones from %s...", marineZonesURL)
+	sendProgress(fmt.Sprintf("Downloading NOAA marine zones from %s...", marineZonesURL))
 	if err := downloadFile(zipPath, marineZonesURL); err != nil {
 		return fmt.Errorf("downloading shapefile: %w", err)
 	}
 	defer os.Remove(zipPath) // Clean up zip file after extraction
 
 	// Extract shapefile
-	log.Println("Extracting shapefile...")
+	sendProgress("Extracting shapefile...")
 	if err := unzipFile(zipPath, dataDir); err != nil {
 		return fmt.Errorf("extracting shapefile: %w", err)
 	}
 
 	// Build database
 	shapefilePath := filepath.Join(dataDir, shapefileBase+".shp")
-	log.Println("Building marine zones database...")
-	if err := buildDatabase(shapefilePath, dbPath); err != nil {
+	sendProgress("Building marine zones database...")
+	if err := buildDatabase(shapefilePath, dbPath, progressChan); err != nil {
 		return fmt.Errorf("building database: %w", err)
 	}
 
 	// Clean up shapefile files (keep only the database)
 	cleanupShapefiles(dataDir, shapefileBase)
 
-	log.Printf("Successfully provisioned marine zones database at %s", dbPath)
+	sendProgress(fmt.Sprintf("Successfully provisioned marine zones database at %s", dbPath))
 	return nil
 }
 
@@ -147,7 +174,7 @@ func unzipFile(src, dest string) error {
 }
 
 // buildDatabase creates the marine_zones table in the SQLite database from the shapefile
-func buildDatabase(shapefilePath, dbPath string) error {
+func buildDatabase(shapefilePath, dbPath string, progressChan chan<- string) error {
 	// Open the shapefile
 	shape, err := shp.Open(shapefilePath)
 	if err != nil {
@@ -269,11 +296,19 @@ func buildDatabase(shapefilePath, dbPath string) error {
 
 		count++
 		if count%100 == 0 {
-			log.Printf("Processed %d zones...", count)
+			msg := fmt.Sprintf("Processed %d zones...", count)
+			if progressChan != nil {
+				progressChan <- msg
+			}
+			log.Println(msg)
 		}
 	}
 
-	log.Printf("Successfully created database with %d marine zones", count)
+	msg := fmt.Sprintf("Successfully created database with %d marine zones", count)
+	if progressChan != nil {
+		progressChan <- msg
+	}
+	log.Println(msg)
 	return nil
 }
 

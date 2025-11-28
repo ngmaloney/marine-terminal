@@ -81,3 +81,66 @@ func fetchZoneAlerts(client noaa.AlertClient, zoneCode string) tea.Cmd {
 		return zoneAlertsFetchedMsg{alerts: alerts, err: err}
 	}
 }
+
+// Provisioning messages
+
+type provisionStatusMsg string
+
+type provisionResultMsg struct {
+	err error
+}
+
+// waitForProvisioning returns a message wrapping the channels so the Update loop can subscribe to them
+type provisioningStartedMsg struct {
+	progressChan <-chan string
+	resultChan   <-chan error
+}
+
+// Actual command to start and return the channels
+func initiateProvisioning() tea.Cmd {
+	return func() tea.Msg {
+		progressChan := make(chan string)
+		resultChan := make(chan error)
+
+		go func() {
+			// Small delay to ensure UI is ready
+			time.Sleep(100 * time.Millisecond)
+
+			// Provision marine zones
+			err := zonelookup.ProvisionDatabaseWithProgress(database.DBPath(), progressChan)
+			if err != nil {
+				resultChan <- err
+				close(progressChan)
+				return
+			}
+
+			// Provision zipcodes
+			err = geocoding.ProvisionZipcodeDatabaseWithProgress(database.DBPath(), progressChan)
+			
+			resultChan <- err
+			close(progressChan) // Signal end of progress
+		}()
+
+		return provisioningStartedMsg{
+			progressChan: progressChan,
+			resultChan:   resultChan,
+		}
+	}
+}
+
+func waitForProvisionStatus(ch <-chan string) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return nil // Channel closed
+		}
+		return provisionStatusMsg(msg)
+	}
+}
+
+func waitForProvisionResult(ch <-chan error) tea.Cmd {
+	return func() tea.Msg {
+		err := <-ch
+		return provisionResultMsg{err: err}
+	}
+}

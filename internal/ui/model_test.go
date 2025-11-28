@@ -204,6 +204,7 @@ func TestModel_View_States(t *testing.T) {
 		{"zone list", StateZoneList},
 		{"loading", StateLoading},
 		{"display", StateDisplay},
+		{"provisioning", StateProvisioning},
 		{"error", StateError},
 	}
 
@@ -258,8 +259,11 @@ func TestAppState_Constants(t *testing.T) {
 	if StateDisplay != 3 {
 		t.Errorf("StateDisplay = %d, want 3", StateDisplay)
 	}
-	if StateError != 4 {
-		t.Errorf("StateError = %d, want 4", StateError)
+	if StateProvisioning != 4 {
+		t.Errorf("StateProvisioning = %d, want 4", StateProvisioning)
+	}
+	if StateError != 5 {
+		t.Errorf("StateError = %d, want 5", StateError)
 	}
 }
 
