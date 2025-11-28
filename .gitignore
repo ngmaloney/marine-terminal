@@ -26,6 +26,9 @@ data/
 *.cpg
 *.zip
 
+# Exception: bundled zipcode data should be committed
+!testdata/uszips.csv
+
 # IDE
 .vscode/
 .idea/

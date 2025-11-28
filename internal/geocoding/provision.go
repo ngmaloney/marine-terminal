@@ -6,17 +6,37 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	_ "modernc.org/sqlite"
 )
 
-const (
-	zipcodeCSVURL = "https://raw.githubusercontent.com/midwire/free_zipcode_data/develop/all_us_zipcodes.csv"
-)
+// getZipcodeCSVPath returns the path to the bundled zipcode CSV file
+// It looks for testdata/uszips.csv relative to the module root
+func getZipcodeCSVPath() string {
+	// Try current directory first (for running from repo root)
+	path := "testdata/uszips.csv"
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+
+	// Try relative to this source file location (for tests)
+	_, filename, _, ok := runtime.Caller(0)
+	if ok {
+		// Get the repo root by going up from internal/geocoding/
+		repoRoot := filepath.Join(filepath.Dir(filename), "..", "..")
+		path = filepath.Join(repoRoot, "testdata", "uszips.csv")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	// Fall back to original path
+	return "testdata/uszips.csv"
+}
 
 // NeedsProvisioning checks if the zipcode database needs to be provisioned
 func NeedsProvisioning(dbPath string) (bool, error) {
@@ -46,7 +66,7 @@ func ProvisionZipcodeDatabase(dbPath string) error {
 	return ProvisionZipcodeDatabaseWithProgress(dbPath, nil)
 }
 
-// ProvisionZipcodeDatabaseWithProgress downloads and builds the zipcode table with progress updates
+// ProvisionZipcodeDatabaseWithProgress builds the zipcode table from bundled CSV data
 func ProvisionZipcodeDatabaseWithProgress(dbPath string, progressChan chan<- string) error {
 	needs, err := NeedsProvisioning(dbPath)
 	if err != nil {
@@ -55,7 +75,7 @@ func ProvisionZipcodeDatabaseWithProgress(dbPath string, progressChan chan<- str
 	if !needs {
 		return nil
 	}
-	
+
 	sendProgress := func(msg string) {
 		if progressChan != nil {
 			progressChan <- msg
@@ -72,44 +92,22 @@ func ProvisionZipcodeDatabaseWithProgress(dbPath string, progressChan chan<- str
 		return fmt.Errorf("creating data directory: %w", err)
 	}
 
-	// Download CSV
-	csvPath := filepath.Join(dataDir, "all_us_zipcodes.csv")
-	sendProgress(fmt.Sprintf("Downloading zipcode data from %s...", zipcodeCSVURL))
-	if err := downloadZipcodeCSV(csvPath); err != nil {
-		return fmt.Errorf("downloading zipcode CSV: %w", err)
-	}
-	defer os.Remove(csvPath) // Clean up after import
+	// Get path to bundled CSV
+	csvPath := getZipcodeCSVPath()
 
-	// Build database
-	sendProgress("Building zipcode database...")
+	// Verify bundled CSV exists
+	if _, err := os.Stat(csvPath); os.IsNotExist(err) {
+		return fmt.Errorf("bundled zipcode data not found at %s", csvPath)
+	}
+
+	// Build database from bundled CSV
+	sendProgress("Building zipcode database from bundled data...")
 	if err := buildZipcodeDatabase(csvPath, dbPath, progressChan); err != nil {
 		return fmt.Errorf("building database: %w", err)
 	}
 
 	sendProgress(fmt.Sprintf("Successfully provisioned zipcode database at %s", dbPath))
 	return nil
-}
-
-// downloadZipcodeCSV downloads the zipcode CSV file
-func downloadZipcodeCSV(filepath string) error {
-	resp, err := http.Get(zipcodeCSVURL)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP error: %d", resp.StatusCode)
-	}
-
-	out, err := os.Create(filepath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, resp.Body)
-	return err
 }
 
 // buildZipcodeDatabase creates a SQLite database from the CSV file
@@ -179,20 +177,20 @@ func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) er
 			continue // Skip invalid records
 		}
 
-		// CSV format: code,city,state,county,area_code,lat,lon
-		if len(record) < 7 {
+		// SimpleMaps CSV format: zip,lat,lng,city,state_id,state_name,...
+		if len(record) < 6 {
 			continue
 		}
 
 		zipcode := record[0]
-		city := record[1]
-		state := record[2]
+		city := record[3]
+		state := record[4] // state_id (e.g., "MA")
 
-		lat, err := strconv.ParseFloat(record[5], 64)
+		lat, err := strconv.ParseFloat(record[1], 64)
 		if err != nil {
 			continue
 		}
-		lon, err := strconv.ParseFloat(record[6], 64)
+		lon, err := strconv.ParseFloat(record[2], 64)
 		if err != nil {
 			continue
 		}

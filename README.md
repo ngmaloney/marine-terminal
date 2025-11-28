@@ -400,6 +400,7 @@ ok      github.com/ngmaloney/marine-terminal/internal/ui        coverage: 42.7%
 - **Weather**: [NOAA Weather API](https://www.weather.gov/documentation/services-web-api)
 - **Tides**: [NOAA CO-OPS API](https://tidesandcurrents.noaa.gov/api/)
 - **Alerts**: [NOAA Weather Alerts API](https://www.weather.gov/documentation/services-web-api)
+- **ZIP Codes**: [SimpleMaps US ZIP Codes Database](https://simplemaps.com/data/us-zips) (bundled, Basic version - free for commercial use)
 
 ### Local Database
 
@@ -493,3 +494,4 @@ The shapefile is ~12 MB and downloads from NOAA servers. If the download is slow
 
 - NOAA for providing free marine weather data APIs
 - Charm.sh for the excellent Bubble Tea framework
+- SimpleMaps for the [US ZIP Codes Database](https://simplemaps.com/data/us-zips) (Basic version, free for commercial use)
