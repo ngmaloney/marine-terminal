@@ -82,6 +82,11 @@ var (
 				Padding(0, 1).
 				MarginTop(1)
 
+	boxHeaderStyle = lipgloss.NewStyle().
+			Foreground(colorPrimary).
+			Bold(true).
+			Padding(0, 0, 1, 0) // Padding bottom 1
+
 	sectionBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorder).

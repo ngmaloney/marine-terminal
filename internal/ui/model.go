@@ -585,17 +585,29 @@ func (m Model) viewDisplay() string {
 		sections = append(sections, locationInfo, "")
 	}
 
+	// Determine available width for boxes
+	// Full width - 2 (left/right margin) - 2 (border) - 4 (padding)
+	boxWidth := m.width - 4
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+	
+	// Create box style with dynamic width
+	boxStyle := sectionBoxStyle.Copy().Width(boxWidth)
+
 	// Weather/Forecast section
-	sections = append(sections,
-		sectionHeaderStyle.Render("⛅ MARINE FORECAST"),
+	weatherContent := lipgloss.JoinVertical(lipgloss.Left,
+		boxHeaderStyle.Render("⛅ MARINE FORECAST"),
 		m.renderWeatherSimple(),
 	)
+	sections = append(sections, boxStyle.Render(weatherContent))
 
 	// Alerts section
-	sections = append(sections,
-		sectionHeaderStyle.Render("⚠️  MARINE ALERTS"),
+	alertContent := lipgloss.JoinVertical(lipgloss.Left,
+		boxHeaderStyle.Render("⚠️  MARINE ALERTS"),
 		m.renderAlertSimple(),
 	)
+	sections = append(sections, boxStyle.Render(alertContent))
 
 	// Help text
 	help := helpStyle.Render("S: New search • Tab: Switch panes • Q: Quit")
