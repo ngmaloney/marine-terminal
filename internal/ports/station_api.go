@@ -255,13 +255,13 @@ func (c *NOAAStationClient) fetchStations(ctx context.Context, params url.Values
 		}
 
 		ports = append(ports, models.Port{
-			ID:          s.ID,
+			StationID:   s.ID,
 			Name:        s.Name,
 			City:        city,
 			State:       s.State,
 			Latitude:    s.Latitude,
 			Longitude:   s.Longitude,
-			TideStation: s.ID,
+			TideStationID: s.ID,
 			Type:        "coastal",
 		})
 	}

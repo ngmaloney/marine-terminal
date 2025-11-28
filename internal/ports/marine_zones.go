@@ -15,7 +15,7 @@ func PopulateMarineZones(ctx context.Context, ports []models.Port) []models.Port
 
 	for i, port := range ports {
 		zone := getClosestMarineZone(ctx, &port)
-		port.MarineZone = zone
+		port.MarineZoneID = zone
 		result[i] = port
 	}
 

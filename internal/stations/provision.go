@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
@@ -24,10 +23,10 @@ var (
 // Station represents a NOAA tide station
 type Station struct {
 	ID        string  `json:"id"`
-	Name      string  `json:name"`
+	Name      string  `json:"name"`
 	State     string  `json:"state"`
-	Latitude  string `json:"lat"` // NOAA API returns lat/lng as strings
-	Longitude string `json:"lng"` // NOAA API returns lat/lng as strings
+	Latitude  float64 `json:"lat"`
+	Longitude float64 `json:"lng"`
 }
 
 // stationResponse represents the NOAA MDAPI response for multiple stations
@@ -172,17 +171,7 @@ func buildStationsDatabase(db *sql.DB, stations []Station, progressChan chan<- s
 
 	count := 0
 	for _, s := range stations {
-		lat, err := strconv.ParseFloat(s.Latitude, 64)
-		if err != nil {
-			log.Printf("Error parsing latitude for station %s: %v", s.ID, err)
-			continue
-		}
-		lon, err := strconv.ParseFloat(s.Longitude, 64)
-		if err != nil {
-			log.Printf("Error parsing longitude for station %s: %v", s.ID, err)
-			continue
-		}
-		_, err = stmt.Exec(s.ID, s.Name, s.State, lat, lon)
+		_, err = stmt.Exec(s.ID, s.Name, s.State, s.Latitude, s.Longitude)
 		if err != nil {
 			log.Printf("Error inserting station %s: %v", s.ID, err)
 			continue

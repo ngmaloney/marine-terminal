@@ -84,9 +84,9 @@ func TestNOAAStationClient_Cache(t *testing.T) {
 	testQuery := "test_cache_key_12345"
 	testStations := []models.Port{
 		{
-			ID:    "1234",
-			Name:  "Test Station",
-			State: "MA",
+			StationID: "1234",
+			Name:      "Test Station",
+			State:     "MA",
 		},
 	}
 
@@ -100,7 +100,7 @@ func TestNOAAStationClient_Cache(t *testing.T) {
 		t.Fatalf("Expected cached result, got error: %v", err)
 	}
 
-	if len(result) != 1 || result[0].ID != "1234" {
+	if len(result) != 1 || result[0].StationID != "1234" {
 		t.Errorf("Expected cached station, got %v", result)
 	}
 
@@ -110,7 +110,7 @@ func TestNOAAStationClient_Cache(t *testing.T) {
 		t.Fatalf("Expected cached result on second call, got error: %v", err)
 	}
 
-	if len(result2) != 1 || result2[0].ID != "1234" {
+	if len(result2) != 1 || result2[0].StationID != "1234" {
 		t.Errorf("Expected same cached station, got %v", result2)
 	}
 }
@@ -138,11 +138,11 @@ func TestNOAAStationClient_GetPortByID(t *testing.T) {
 
 	// Verify we got a valid port with an ID
 	// Note: NOAA API may return different station IDs over time
-	if port.ID == "" {
+	if port.StationID == "" {
 		t.Error("Expected port to have an ID")
 	}
 
-	t.Logf("Got station ID: %s, Name: %s", port.ID, port.Name)
+	t.Logf("Got station ID: %s, Name: %s", port.StationID, port.Name)
 }
 
 // TestNOAAStationClient_Integration tests against the real NOAA API

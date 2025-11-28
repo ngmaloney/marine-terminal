@@ -63,7 +63,9 @@ func (m *mockAlertClient) GetActiveAlertsByZone(ctx context.Context, marineZone 
 // TestIntegration_SearchAndGeocode tests the geocoding workflow
 func TestIntegration_SearchAndGeocode(t *testing.T) {
 	// Create model
-	m := NewModel("")
+	m := NewModel("", "", "")
+	m.state = StateSearch
+	m.searchInput.Focus()
 
 	// Step 1: User types "02633" (Chatham zipcode)
 	for _, char := range "02633" {
@@ -137,7 +139,7 @@ func TestIntegration_ZoneSelection(t *testing.T) {
 	}
 
 	// Create model with mock clients
-	m := NewModel("")
+	m := NewModel("", "", "")
 	m.weatherClient = &mockWeatherClient{conditions: mockConditions, forecast: mockForecast}
 	m.alertClient = &mockAlertClient{alerts: mockAlerts}
 
@@ -151,7 +153,7 @@ func TestIntegration_ZoneSelection(t *testing.T) {
 
 	// Step 1: User presses Enter to select first zone
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
-	updatedModel, cmd := m.Update(enterMsg)
+	updatedModel, _ := m.Update(enterMsg)
 	m = updatedModel.(Model)
 
 	// Verify zone was selected
@@ -163,9 +165,26 @@ func TestIntegration_ZoneSelection(t *testing.T) {
 		t.Errorf("selectedZone.Code = %s, want 'ANZ251'", m.selectedZone.Code)
 	}
 
-	// Verify state transition to loading
+	// Verify state transition to SavePrompt (NEW FLOW)
+	if m.state != StateSavePrompt {
+		t.Errorf("state = %v, want StateSavePrompt", m.state)
+	}
+
+	// Step 1.5: Simulate saving the port
+	// We simulate the portSavedMsg directly to bypass DB interactions in unit test
+	savedPort := &models.Port{
+		Name: "Test Port",
+		MarineZoneID: "ANZ251",
+		Latitude: 41.0,
+		Longitude: -70.0,
+	}
+	saveMsg := portSavedMsg{port: savedPort}
+	updatedModel, cmd := m.Update(saveMsg)
+	m = updatedModel.(Model)
+
+	// Verify state transition to Loading after save
 	if m.state != StateLoading {
-		t.Errorf("state = %v, want StateLoading", m.state)
+		t.Errorf("state = %v, want StateLoading after save", m.state)
 	}
 
 	// Verify loading states
@@ -227,14 +246,14 @@ func TestIntegration_ZoneSelection(t *testing.T) {
 
 // TestIntegration_ErrorHandling tests graceful error handling
 func TestIntegration_ErrorHandling(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
 
 	// Set up clients that will fail
 	testErr := fmt.Errorf("API timeout")
 	m.weatherClient = &mockWeatherClient{err: testErr}
 	m.alertClient = &mockAlertClient{alerts: &models.AlertData{}}
 
-	// Set up as if we've selected a zone
+	// Set up as if we've selected a zone and are loading
 	m.state = StateLoading
 	m.selectedZone = &zonelookup.ZoneInfo{Code: "ANZ251", Name: "Cape Cod Bay"}
 	m.loadingWeather = true
@@ -269,36 +288,22 @@ func TestIntegration_ErrorHandling(t *testing.T) {
 	}
 }
 
-// TestIntegration_SearchAgain tests returning to search from display
+// TestIntegration_SearchAgain tests returning to saved ports from display
 func TestIntegration_SearchAgain(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
 
 	// Set up as if we're in display mode
 	m.state = StateDisplay
 	m.selectedZone = &zonelookup.ZoneInfo{Code: "ANZ251", Name: "Cape Cod Bay"}
 	m.weather = &models.MarineConditions{Location: "Cape Cod Bay"}
 
-	// User presses 'S' to search again
-	sMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
-	updatedModel, _ := m.Update(sMsg)
+	// User presses 'E' to edit/change port
+	eMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}}
+	updatedModel, _ := m.Update(eMsg)
 	m = updatedModel.(Model)
 
-	// Verify state transition to search
-	if m.state != StateSearch {
-		t.Errorf("state = %v, want StateSearch", m.state)
-	}
-
-	// Verify data was cleared
-	if m.selectedZone != nil {
-		t.Error("selectedZone should be cleared when returning to search")
-	}
-	if m.weather != nil {
-		t.Error("weather should be cleared when returning to search")
-	}
-	if m.forecast != nil {
-		t.Error("forecast should be cleared when returning to search")
-	}
-	if m.alerts != nil {
-		t.Error("alerts should be cleared when returning to search")
+	// Verify state transition to SavedPorts
+	if m.state != StateSavedPorts {
+		t.Errorf("state = %v, want StateSavedPorts", m.state)
 	}
 }

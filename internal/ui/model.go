@@ -2,7 +2,7 @@ package ui
 
 import (
 	"fmt"
-	"strings" // Added import for strings
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -14,6 +14,7 @@ import (
 	"github.com/ngmaloney/marine-terminal/internal/geocoding"
 	"github.com/ngmaloney/marine-terminal/internal/models"
 	"github.com/ngmaloney/marine-terminal/internal/noaa"
+	"github.com/ngmaloney/marine-terminal/internal/ports"
 	"github.com/ngmaloney/marine-terminal/internal/stations"
 	"github.com/ngmaloney/marine-terminal/internal/zonelookup"
 )
@@ -28,6 +29,9 @@ const (
 	StateDisplay                      // Display weather/alerts for selected zone
 	StateProvisioning                 // Initial data provisioning (downloading/building DB)
 	StateError                        // Error state
+	StateSavedPorts                   // List saved ports
+	StateSavePrompt                   // Prompt for saving a port
+	StateConfirmDelete                // Prompt for confirming deletion of a port
 )
 
 // ActivePane represents which pane is currently focused
@@ -46,6 +50,9 @@ type Model struct {
 	height      int
 	err         error
 
+	// Services
+	portService *ports.Service
+
 	// Search
 	searchInput textinput.Model
 	geocoder    *geocoding.Geocoder
@@ -58,6 +65,13 @@ type Model struct {
 	selectedZone  *zonelookup.ZoneInfo
 	tideStations  []stations.TideStationInfo
 	tideStation   *stations.TideStationInfo
+
+	// Ports
+	savedPorts []models.Port
+	portList   list.Model
+	saveInput  textinput.Model
+	saving     bool
+	portToDelete *models.Port // New: for confirmation before deleting
 
 	// Charts
 	tideChart timeserieslinechart.Model
@@ -85,15 +99,22 @@ type Model struct {
 	provisionChannels *provisioningStartedMsg
 
 	initialStationCode string // New: for direct loading via CLI arg
+	initialLocation    string
+	initialPortName    string
 }
 
 // NewModel creates a new application model
-func NewModel(initialStationCode string) Model {
+func NewModel(initialStationCode, initialLocation, initialPortName string) Model {
 	ti := textinput.New()
 	ti.Placeholder = "Enter zipcode or city, state (e.g. 02633 or Chatham, MA)..."
 	ti.Focus()
 	ti.CharLimit = 100
 	ti.Width = 60
+
+	si := textinput.New()
+	si.Placeholder = "Enter a name for this port (e.g. Stage Harbor)"
+	si.CharLimit = 50
+	si.Width = 60
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -102,16 +123,20 @@ func NewModel(initialStationCode string) Model {
 	tc := timeserieslinechart.New(50, 15)
 	
 	return Model{
-		state:         StateSearch, // Will be checked in Init, potentially overridden
+		state:         StateLoading, // Start in loading to check for saved ports
 		activePane:    PaneWeather,
 		searchInput:   ti,
+		saveInput:     si,
 		geocoder:      geocoding.NewGeocoder(),
 		weatherClient: noaa.NewWeatherClient(),
 		alertClient:   noaa.NewAlertClient(),
 		tideClient:    noaa.NewTideClient(),
+		portService:   ports.NewService(),
 		spinner:       s,
 		tideChart:     tc,
 		initialStationCode: initialStationCode,
+		initialLocation:    initialLocation,
+		initialPortName:    initialPortName,
 	}
 }
 
@@ -121,26 +146,52 @@ func (m Model) Init() tea.Cmd {
 	
 	// Check if we need to provision the database (marine zones or zipcodes)
 	zonesNeeded, err := zonelookup.NeedsProvisioning(dbPath)
-	if err != nil {
-		return textinput.Blink
-	}
-	
-	zipNeeded, err := geocoding.NeedsProvisioning(dbPath)
-	if err != nil {
-		return textinput.Blink
+	if err == nil {
+		zipNeeded, err := geocoding.NeedsProvisioning(dbPath)
+		if err == nil && (zonesNeeded || zipNeeded) {
+			return tea.Batch(m.spinner.Tick, initiateProvisioning())
+		}
 	}
 
-	if zonesNeeded || zipNeeded {
-		return tea.Batch(m.spinner.Tick, initiateProvisioning())
+	// 1. Load by Port Name
+	if m.initialPortName != "" {
+		return tea.Batch(m.spinner.Tick, fetchPortByName(m.portService, m.initialPortName))
 	}
 
-	// If no provisioning needed, check for direct station load
-	if m.initialStationCode != "" {
-		m.state = StateLoading
-		return tea.Batch(m.spinner.Tick, directLoadStation(m.initialStationCode))
+	// 2. Load by Station + Location
+	if m.initialStationCode != "" && m.initialLocation != "" {
+		m.searchQuery = m.initialLocation
+		return tea.Batch(m.spinner.Tick, geocodeLocation(m.geocoder, m.initialLocation))
 	}
 
-	return textinput.Blink
+	// 3. Default: Fetch saved ports
+	return tea.Batch(m.spinner.Tick, fetchSavedPorts(m.portService))
+}
+
+// loadPort sets up the model to display a specific port
+func (m Model) loadPort(p models.Port) (Model, tea.Cmd) {
+	if p.Zipcode != "" {
+		m.searchQuery = p.Zipcode
+	} else {
+		m.searchQuery = fmt.Sprintf("%s, %s", p.City, p.State)
+	}
+	m.selectedZone = &zonelookup.ZoneInfo{
+		Code: p.MarineZoneID,
+		Name: p.Name, 
+	}
+	m.location = &geocoding.Location{
+		Latitude:  p.Latitude,
+		Longitude: p.Longitude,
+		Name:      m.searchQuery,
+	}
+	m.state = StateLoading
+	m.loadingWeather = true
+	m.loadingAlerts = true
+	return m, tea.Batch(
+		fetchZoneWeather(m.weatherClient, m.selectedZone.Code),
+		fetchZoneAlerts(m.alertClient, m.selectedZone.Code),
+		findNearestTideStation(m.location.Latitude, m.location.Longitude),
+	)
 }
 
 // Update handles messages and updates the model
@@ -151,9 +202,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
-		// Update zone list size if it exists
+		// Update lists size if they exist
 		if m.state == StateZoneList {
 			m.zoneList.SetSize(msg.Width-4, msg.Height-10)
+		}
+		if m.state == StateSavedPorts {
+			m.portList.SetSize(msg.Width-4, msg.Height-10)
 		}
 		return m, nil
 	}
@@ -163,6 +217,79 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = msg.err
 		m.state = StateError
+		return m, nil
+
+	case portsFetchedMsg:
+		if msg.err != nil {
+			// If error fetching ports, default to search
+			m.state = StateSearch
+			m.searchInput.Focus()
+			return m, nil
+		}
+		m.savedPorts = msg.ports
+		
+		// If ports exist, populate the list
+		if len(m.savedPorts) > 0 {
+			m.portList = createPortList(m.savedPorts, m.width-4, m.height-10)
+			// AUTO-LOAD: If we have ports, load the first one by default
+			return m.loadPort(m.savedPorts[0])
+		}
+		
+		// No ports, go to search (new port setup)
+		m.state = StateSearch
+		m.searchInput.Focus()
+		return m, nil
+
+	case portFetchedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.state = StateError
+			return m, nil
+		}
+		return m.loadPort(*msg.port)
+
+	case portSavedMsg:
+		m.saving = false
+		if msg.err != nil {
+			m.err = msg.err
+			m.state = StateError
+			return m, nil
+		}
+		
+		// Update local list
+		found := false
+		for i, p := range m.savedPorts {
+			if p.Name == msg.port.Name {
+				m.savedPorts[i] = *msg.port
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.savedPorts = append(m.savedPorts, *msg.port)
+		}
+		
+		// Update UI list
+		m.portList = createPortList(m.savedPorts, m.width-4, m.height-10)
+		
+		return m.loadPort(*msg.port)
+
+	case portDeletedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.state = StateError
+			return m, nil
+		}
+		// Remove the deleted port from the list
+		var updatedPorts []models.Port
+		for _, p := range m.savedPorts {
+			if p.Name != msg.name {
+				updatedPorts = append(updatedPorts, p)
+			}
+		}
+		m.savedPorts = updatedPorts
+		m.portList = createPortList(m.savedPorts, m.width-4, m.height-10)
+		m.state = StateSavedPorts // Return to saved ports list
 		return m, nil
 
 	// Provisioning messages
@@ -190,10 +317,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = StateError
 			return m, nil
 		}
-		// Success! Transition to search
-		m.state = StateSearch
-		m.searchInput.Focus()
-		return m, textinput.Blink
+		// Success! Check saved ports again
+		return m, fetchSavedPorts(m.portService)
 
 	case geocodeMsg:
 		if msg.err != nil {
@@ -202,7 +327,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.location = msg.location
-		// Find nearby zones and nearest tide station
+		
+		// If we are direct loading with station code
+		if m.initialStationCode != "" {
+			// Skip zone finding, assume station code is valid
+			m.selectedZone = &zonelookup.ZoneInfo{
+				Code: m.initialStationCode,
+				Name: "Direct Loaded",
+			}
+			m.state = StateLoading
+			m.loadingWeather = true
+			m.loadingAlerts = true
+			return m, tea.Batch(
+				fetchZoneWeather(m.weatherClient, m.selectedZone.Code),
+				fetchZoneAlerts(m.alertClient, m.selectedZone.Code),
+				findNearestTideStation(m.location.Latitude, m.location.Longitude),
+			)
+		}
+
 		return m, tea.Batch(
 			findNearbyZones(msg.location.Latitude, msg.location.Longitude),
 			findNearestTideStation(msg.location.Latitude, msg.location.Longitude),
@@ -216,7 +358,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadingTides = true
 			return m, fetchTideData(m.tideClient, m.tideStation.ID)
 		} else if msg.err != nil {
-			// Log error but don't stop app? 
+			// Log error but don't stop app?
 			// For now, if tide lookup fails, we just don't have tide data.
 			// Ideally we show a message in the Tide Pane.
 			m.tideStation = nil
@@ -271,7 +413,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.weather = msg.conditions
 			m.forecast = msg.forecast
 		}
-		// Transition to display if not already there
 		if m.state != StateDisplay {
 			m.state = StateDisplay
 		}
@@ -284,7 +425,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.alerts = msg.alerts
 		}
-		// Transition to display if not already there
 		if m.state != StateDisplay {
 			m.state = StateDisplay
 		}
@@ -310,7 +450,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		// Global keys
 		if keyMsg.String() == "ctrl+c" || keyMsg.String() == "q" {
-			return m, tea.Quit
+			// Allow quitting unless in input fields where 'q' might be text
+			if m.state != StateSearch && m.state != StateSavePrompt {
+				return m, tea.Quit
+			}
+			// In inputs, ctrl+c quits
+			if keyMsg.String() == "ctrl+c" {
+				return m, tea.Quit
+			}
 		}
 
 		// State-specific handling
@@ -318,35 +465,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case StateSearch:
 			return m.handleSearchInput(keyMsg)
 
+		case StateSavedPorts:
+			return m.handleSavedPorts(msg)
+
+		case StateSavePrompt:
+			return m.handleSavePrompt(keyMsg)
+
+		case StateConfirmDelete:
+			return m.handleConfirmDelete(keyMsg)
+
 		case StateZoneList:
 			return m.handleZoneList(msg)
 
 		case StateDisplay:
-			// 's' to return to search
-			if keyMsg.String() == "s" {
-				m.state = StateSearch
-				m.searchInput.SetValue("")
-				m.searchInput.Focus()
-				// Clear all data
-				m.selectedZone = nil
-				m.weather = nil
-				m.forecast = nil
-				m.alerts = nil
-				m.location = nil
-				m.zones = nil
-				return m, textinput.Blink
-			}
-			// Tab to switch panes
-			if keyMsg.Type == tea.KeyTab {
-				if m.activePane == PaneWeather {
-					m.activePane = PaneTides
-				} else {
-					m.activePane = PaneWeather
-				}
+			// 'e' to edit/change port
+			if keyMsg.String() == "e" {
+				m.state = StateSavedPorts
 				return m, nil
 			}
-			// Shift+Tab (same logic for 2 tabs)
-			if keyMsg.Type == tea.KeyShiftTab {
+			// Tab to switch panes
+			if keyMsg.Type == tea.KeyTab || keyMsg.Type == tea.KeyShiftTab {
 				if m.activePane == PaneWeather {
 					m.activePane = PaneTides
 				} else {
@@ -370,36 +508,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StateProvisioning:
 		var cmdSpinner tea.Cmd
 		m.spinner, cmdSpinner = m.spinner.Update(msg)
-		
-		// Handle provisioning specific messages here to access local scope if needed, 
-		// but we can also handle them in the main switch.
-		// Let's handle the channel persistence by using a modified message type.
-		// For now, I need to update `zone_messages.go` to include the channel in the msg.
-		// I will do that in a separate step before this one compiles?
-		// No, I should do it now or rely on the `Update` logic having access to a stored channel in `Model`.
-		// storing `provisionChannels` in Model is cleaner than passing them around in messages.
-		
 		return m, cmdSpinner
 		
 	case StateSearch:
 		m.searchInput, cmd = m.searchInput.Update(msg)
+	case StateSavePrompt:
+		m.saveInput, cmd = m.saveInput.Update(msg)
 	case StateZoneList:
 		m.zoneList, cmd = m.zoneList.Update(msg)
+	case StateSavedPorts:
+		m.portList, cmd = m.portList.Update(msg)
 	}
 
 	return m, cmd
 }
 
-// handleSearchInput handles keyboard input in search state
 func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-
-	// Clear error when typing
 	if m.err != nil && msg.Type != tea.KeyEnter {
 		m.err = nil
 	}
-
-	// Handle Enter key
 	if msg.Type == tea.KeyEnter {
 		query := m.searchInput.Value()
 		if query == "" {
@@ -408,79 +536,126 @@ func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchQuery = query
 		m.err = nil
 		m.state = StateLoading
-		// Start geocoding
 		return m, geocodeLocation(m.geocoder, query)
 	}
-
-	// Update text input
 	m.searchInput, cmd = m.searchInput.Update(msg)
 	return m, cmd
 }
 
-// handleZoneList handles keyboard input in zone list state
-func (m Model) handleZoneList(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) handleSavePrompt(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+	if msg.Type == tea.KeyEsc {
+		m.state = StateDisplay
+		return m, nil
+	}
+	if msg.Type == tea.KeyEnter {
+		name := m.saveInput.Value()
+		if name == "" {
+			return m, nil
+		}
+		m.saving = true
+		return m, savePort(m.portService, name, m.searchQuery, m.selectedZone.Code)
+	}
+	m.saveInput, cmd = m.saveInput.Update(msg)
+	return m, cmd
+}
 
-	// Check for Enter key to select zone
+func (m Model) handleSavedPorts(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if keyMsg.Type == tea.KeyEnter {
-			// Get selected zone
-			if item, ok := m.zoneList.SelectedItem().(zoneItem); ok {
-				m.selectedZone = &item.zone
-				m.state = StateLoading
-				m.loadingWeather = true
-				m.loadingAlerts = true
-				// Clear old data
-				m.weather = nil
-				m.forecast = nil
-				m.alerts = nil
-				// Fetch data for this zone
-				return m, tea.Batch(
-					fetchZoneWeather(m.weatherClient, m.selectedZone.Code),
-					fetchZoneAlerts(m.alertClient, m.selectedZone.Code),
-				)
+			if item, ok := m.portList.SelectedItem().(portItem); ok {
+				return m.loadPort(item.port)
 			}
 		}
-		// 's' or Esc to go back to search
+		if keyMsg.String() == "n" {
+			m.state = StateSearch
+			m.searchInput.Focus()
+			return m, textinput.Blink
+		}
+		// New: handle delete key
+		if keyMsg.String() == "d" {
+			if item, ok := m.portList.SelectedItem().(portItem); ok {
+				m.portToDelete = &item.port
+				m.state = StateConfirmDelete
+				return m, nil
+			}
+		}
+	}
+	m.portList, cmd = m.portList.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "y" || msg.String() == "Y" {
+		if m.portToDelete != nil {
+			return m, deletePort(m.portService, m.portToDelete.Name)
+		}
+	} else if msg.String() == "n" || msg.String() == "N" || msg.Type == tea.KeyEsc {
+		// Cancel deletion
+		m.portToDelete = nil
+		m.state = StateSavedPorts
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) handleZoneList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg.Type == tea.KeyEnter {
+			if item, ok := m.zoneList.SelectedItem().(zoneItem); ok {
+				m.selectedZone = &item.zone
+				// Transition to save prompt to define the port
+				m.state = StateSavePrompt
+				// Default name to location (city/state) or search query
+				defaultName := m.searchQuery
+				if m.location != nil && m.location.Name != "" {
+					defaultName = m.location.Name
+				}
+				m.saveInput.SetValue(defaultName)
+				m.saveInput.Focus()
+				return m, nil
+			}
+		}
 		if keyMsg.String() == "s" || keyMsg.Type == tea.KeyEsc {
 			m.state = StateSearch
 			m.searchInput.Focus()
 			return m, textinput.Blink
 		}
 	}
-
-	// Update list
 	m.zoneList, cmd = m.zoneList.Update(msg)
-
 	return m, cmd
 }
 
-
-// View renders the UI
+// View and render methods
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading..."
 	}
-
-	// 1. Render Background Layer
-	// This is either the weather display or a placeholder if no zone is selected
 	var background string
 	if m.selectedZone != nil {
 		background = m.renderWeatherView()
 	} else {
 		background = m.renderEmptyState()
 	}
-
-	// 2. Render Modal Layer (if applicable)
 	var modalContent string
 	showModal := false
-
 	switch m.state {
 	case StateSearch:
 		modalContent = m.viewSearch()
 		showModal = true
 	case StateZoneList:
 		modalContent = m.viewZoneList()
+		showModal = true
+	case StateSavedPorts:
+		modalContent = m.viewSavedPorts()
+		showModal = true
+	case StateSavePrompt:
+		modalContent = m.viewSavePrompt()
+		showModal = true
+	case StateConfirmDelete:
+		modalContent = m.viewConfirmDelete()
 		showModal = true
 	case StateLoading:
 		modalContent = m.viewLoading()
@@ -492,431 +667,193 @@ func (m Model) View() string {
 		modalContent = m.viewError()
 		showModal = true
 	}
-
-	// 3. Composite layers
 	if showModal {
-		
 		modal := modalStyle.Render(modalContent)
-		
-		// Use lipgloss.Place to center the modal over the background
-		// We place the modal in a box the size of the window
-		return lipgloss.Place(
-			m.width, m.height,
-			lipgloss.Center, lipgloss.Center,
-			modal,
-			lipgloss.WithWhitespaceChars(" "),
-			lipgloss.WithWhitespaceForeground(colorMuted),
-		)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal, lipgloss.WithWhitespaceChars(" "), lipgloss.WithWhitespaceForeground(colorMuted))
 	}
-
 	return background
 }
 
-// renderEmptyState renders a placeholder when no station is selected
 func (m Model) renderEmptyState() string {
-	return lipgloss.Place(
-		m.width, m.height,
-		lipgloss.Center, lipgloss.Center,
-		lipgloss.JoinVertical(lipgloss.Center,
-			titleStyle.Render("⚓ Marine Terminal"),
-			mutedStyle.Render("Press 'S' to search for a station"),
-		),
-	)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Center, titleStyle.Render("⚓ Marine Terminal"), mutedStyle.Render("Press 'E' to view ports")))
 }
 
-// viewProvisioning renders the initial setup screen
 func (m Model) viewProvisioning() string {
-	title := titleStyle.Render("⚓ Setup")
-	
 	sp := m.spinner.View()
-	status := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("240")).
-		Render(m.provisionStatus)
-		
-	info := helpStyle.Render("Downloading marine zones...")
-
-	return lipgloss.JoinVertical(
-		lipgloss.Center,
-		title,
-		"",
-		fmt.Sprintf("%s %s", sp, status),
-		"",
-		info,
-	)
+	status := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(m.provisionStatus)
+	return lipgloss.JoinVertical(lipgloss.Center, titleStyle.Render("⚓ Setup"), "", fmt.Sprintf("%s %s", sp, status), "", helpStyle.Render("Downloading marine zones..."))
 }
 
-// viewError renders the error view
 func (m Model) viewError() string {
-	title := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FF6B6B")).
-		Bold(true).
-		Render("✗ Error")
-
-	var errorMsg string
-	if m.err != nil {
-		errorMsg = m.err.Error()
-	} else {
-		errorMsg = "An unknown error occurred"
-	}
-
-	help := helpStyle.Render("Esc: Back • Q: Quit")
-
-	return lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		"",
-		errorMsg,
-		"",
-		help,
-	)
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")).Bold(true).Render("✗ Error")
+	msg := "An unknown error occurred"
+	if m.err != nil { msg = m.err.Error() }
+	return lipgloss.JoinVertical(lipgloss.Left, title, "", msg, "", helpStyle.Render("Esc: Back • Q: Quit"))
 }
 
-// viewSearch renders the search modal content
 func (m Model) viewSearch() string {
-	// Title
-	title := titleStyle.Render("Search Station")
+	title := titleStyle.Render("New Port Setup")
 	subtitle := mutedStyle.Render("Enter Zipcode or City, State")
-
-	// Search box with border
-	searchBox := m.searchInput.View()
-
-	// Error message if present
-	var errorMsg string
+	sb := m.searchInput.View()
+	errorMsg := ""
 	if m.err != nil {
-		errorStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FF6B6B")).
-			Bold(true)
-		errorMsg = errorStyle.Render("✗ " + m.err.Error())
+		errorMsg = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")).Bold(true).Render("✗ " + m.err.Error())
 	}
-
-	// Assemble the view
-	var sections []string
-	sections = append(sections, title)
-	sections = append(sections, subtitle)
-	sections = append(sections, "")
-	sections = append(sections, searchBox)
-
-	if m.err != nil {
-		sections = append(sections, "")
-		sections = append(sections, errorMsg)
-	}
-
-	// Examples (compact)
-	examples := mutedStyle.Render("e.g. 02633, Chatham MA")
-	sections = append(sections, "", examples)
-
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	content := []string{title, subtitle, "", sb}
+	if errorMsg != "" { content = append(content, "", errorMsg) }
+	content = append(content, "", mutedStyle.Render("e.g. 02633, Chatham MA"))
+	return lipgloss.JoinVertical(lipgloss.Left, content...)
 }
 
-// viewZoneList renders the marine zone selection list for modal
+func (m Model) viewSavedPorts() string {
+	title := titleStyle.Render("Saved Ports")
+	help := mutedStyle.Render("Enter: Select • n: New Port • d: Delete Port")
+	return lipgloss.JoinVertical(lipgloss.Left, title, "", m.portList.View(), "", help)
+}
+
+func (m Model) viewSavePrompt() string {
+	title := titleStyle.Render("Save Port")
+	subtitle := mutedStyle.Render("Enter a name for this configuration")
+	return lipgloss.JoinVertical(lipgloss.Left, title, subtitle, "", m.saveInput.View())
+}
+
+func (m Model) viewConfirmDelete() string {
+	portName := ""
+	if m.portToDelete != nil {
+		portName = m.portToDelete.Name
+	}
+
+	title := alertDangerStyle.Render("Delete Port")
+	prompt := fmt.Sprintf("Are you sure you want to delete '%s'? (y/n)", portName)
+	return lipgloss.JoinVertical(lipgloss.Left, title, "", prompt, "", helpStyle.Render("y: Confirm • n/Esc: Cancel"))
+}
+
 func (m Model) viewZoneList() string {
-	title := titleStyle.Render("Select Zone")
-	//subtitle := mutedStyle.Render(fmt.Sprintf("Found %d zones", len(m.zones)))
-
-	return lipgloss.JoinVertical(lipgloss.Left, 
-		title, 
-		//subtitle, 
-		"", 
-		m.zoneList.View(),
-	)
+	return lipgloss.JoinVertical(lipgloss.Left, titleStyle.Render("Select Zone"), "", m.zoneList.View())
 }
 
-// viewLoading renders the loading modal
 func (m Model) viewLoading() string {
-	sp := m.spinner.View()
-	label := "Loading..."
-
-	return fmt.Sprintf("%s %s", sp, label)
+	return fmt.Sprintf("%s Loading...", m.spinner.View())
 }
 
-// renderWeatherView renders the main display with tabs
 func (m Model) renderWeatherView() string {
-	if m.selectedZone == nil {
-		return "No zone selected"
-	}
-
-	var sections []string
-
-	// Header with nice styling
-	headerStyle := lipgloss.NewStyle().
-		Foreground(colorPrimary).
-		Bold(true).
-		Padding(0, 1).
-		MarginBottom(1)
-	header := headerStyle.Render(fmt.Sprintf("⚓ %s - %s", m.selectedZone.Code, m.selectedZone.Name))
-	sections = append(sections, header)
-
-	// Location info
+	if m.selectedZone == nil { return "No zone" }
+	header := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true).Padding(0, 1).MarginBottom(1).Render(fmt.Sprintf("⚓ %s - %s", m.selectedZone.Code, m.selectedZone.Name))
+	loc := ""
 	if m.location != nil {
-		locationInfo := mutedStyle.Render(fmt.Sprintf("📍 %s (%.1f mi away)", m.searchQuery, m.selectedZone.Distance))
-		sections = append(sections, locationInfo, "")
+		loc = mutedStyle.Render(fmt.Sprintf("📍 %s (%.1f mi away)", m.searchQuery, m.selectedZone.Distance))
 	}
-
-	// Tab Bar
-	var tabs []string
 	
-	weatherTab := "Weather"
-	if m.activePane == PaneWeather {
-		weatherTab = activeTabStyle.Render(weatherTab)
-	} else {
-		weatherTab = tabStyle.Render(weatherTab)
-	}
-	tabs = append(tabs, weatherTab)
-
-	tidesTab := "Tides"
-	if m.activePane == PaneTides {
-		tidesTab = activeTabStyle.Render(tidesTab)
-	} else {
-		tidesTab = tabStyle.Render(tidesTab)
-	}
-	tabs = append(tabs, tidesTab)
-
-	// Remove Alerts tab from tab bar
+	weatherTab := tabStyle.Render("Weather")
+	if m.activePane == PaneWeather { weatherTab = activeTabStyle.Render("Weather") }
+	tidesTab := tabStyle.Render("Tides")
+	if m.activePane == PaneTides { tidesTab = activeTabStyle.Render("Tides") }
+	tabBar := lipgloss.JoinHorizontal(lipgloss.Top, weatherTab, tidesTab)
 	
-	tabBar := lipgloss.JoinHorizontal(lipgloss.Top, tabs...)
-	sections = append(sections, tabBar)
-	sections = append(sections, "") // Spacer
-
-	// Determine available width for boxes
-	// Full width - 2 (left/right margin) - 2 (border) - 4 (padding)
 	boxWidth := m.width - 4
-	if boxWidth < 40 {
-		boxWidth = 40
-	}
-	
-	// Create box style with dynamic width
+	if boxWidth < 40 { boxWidth = 40 }
 	boxStyle := sectionBoxStyle.Copy().Width(boxWidth)
-
-	// Content based on active pane
+	
 	var content string
-	switch m.activePane {
-	case PaneWeather:
-		// Weather/Forecast section
-		weatherSection := lipgloss.JoinVertical(lipgloss.Left,
-			boxHeaderStyle.Render("⛅ MARINE FORECAST"),
-			m.renderWeatherSimple(),
-		)
-		
-		// Alerts section (now part of Weather pane)
-		alertSection := lipgloss.JoinVertical(lipgloss.Left,
-			boxHeaderStyle.Render("⚠️  MARINE ALERTS"),
-			m.renderAlertSimple(),
-		)
-		
-		// Join them with some spacing
+	if m.activePane == PaneWeather {
 		content = lipgloss.JoinVertical(lipgloss.Left,
-			weatherSection,
-			"", // Spacer
-			alertSection,
+			lipgloss.JoinVertical(lipgloss.Left, boxHeaderStyle.Render("⛅ MARINE FORECAST"), m.renderWeatherSimple()),
+			"",
+			lipgloss.JoinVertical(lipgloss.Left, boxHeaderStyle.Render("⚠️  MARINE ALERTS"), m.renderAlertSimple()),
 		)
-		
-	case PaneTides:
-		var tideInfo string
+	} else {
+		tideInfo := "No nearby tide station found."
 		if m.tideStation != nil {
 			tideInfo = fmt.Sprintf("Station: %s (%s)\n", m.tideStation.Name, m.tideStation.ID)
-			
 			if m.loadingTides {
 				tideInfo += "\n" + m.spinner.View() + " Loading tide predictions..."
 			} else {
 				if m.tideConditions != nil {
-					tideInfo += fmt.Sprintf("Air Temp: %.1f°F  Pressure: %.1f mb\n", 
-						m.tideConditions.Temperature, 
-						m.tideConditions.Pressure)
+					tideInfo += fmt.Sprintf("Air Temp: %.1f°F  Pressure: %.1f mb\n", m.tideConditions.Temperature, m.tideConditions.Pressure)
 				}
-				
 				if m.tides != nil {
-					// Render chart
-					tideInfo += "\n" + m.tideChart.View()
-					
-					// Render list below chart
-					tideInfo += "\n\nUpcoming Tides:"
+					tideInfo += "\n" + m.tideChart.View() + "\n\nUpcoming Tides:"
 					for i, event := range m.tides.Events {
-						if i >= 6 { break } // Limit to 6
-						tideInfo += fmt.Sprintf("\n  %s  %-4s  %.1f ft", 
-							event.Time.Format("Jan 2, 3:04 PM"),
-							event.Type,
-							event.Height,
-						)
+						if i >= 6 { break }
+						tideInfo += fmt.Sprintf("\n  %s  %-4s  %.1f ft", event.Time.Format("Jan 2, 3:04 PM"), event.Type, event.Height)
 					}
-				} else {
-					tideInfo += "\nNo tide predictions available."
-				}
+				} else { tideInfo += "\nNo tide predictions available." }
 			}
-		} else {
-			tideInfo = "No nearby tide station found."
 		}
-		
-		content = lipgloss.JoinVertical(lipgloss.Left,
-			boxHeaderStyle.Render("🌊 TIDES"),
-			tideInfo,
-		)
+		content = lipgloss.JoinVertical(lipgloss.Left, boxHeaderStyle.Render("🌊 TIDES"), tideInfo)
 	}
-
-	sections = append(sections, boxStyle.Render(content))
-
-	// Help text
-	help := helpStyle.Render("S: New search • Tab: Switch tab • Q: Quit")
-
-	sections = append(sections, "", help)
-
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	
+	return lipgloss.JoinVertical(lipgloss.Left, header, loc, "", tabBar, "", boxStyle.Render(content), "", helpStyle.Render("e: Edit Port • Tab: Switch tab • q: Quit"))
 }
 
-// renderWeatherSimple renders the current weather conditions
 func (m Model) renderWeatherSimple() string {
-	if m.loadingWeather {
-		return fmt.Sprintf("%s Fetching marine forecast...", m.spinner.View())
-	}
-
-	if m.weather == nil {
-		return "No marine weather data available."
-	}
-
+	if m.loadingWeather { return fmt.Sprintf("%s Fetching marine forecast...", m.spinner.View()) }
+	if m.weather == nil { return "No marine weather data available." }
 	return formatWeather(m.weather, m.forecast)
 }
 
-// renderAlertSimple renders active marine alerts
 func (m Model) renderAlertSimple() string {
-	if m.loadingAlerts {
-		return fmt.Sprintf("%s Fetching marine alerts...", m.spinner.View())
-	}
-
-	if m.alerts == nil || len(m.alerts.Alerts) == 0 {
-		return "No active marine alerts."
-	}
-
+	if m.loadingAlerts { return fmt.Sprintf("%s Fetching marine alerts...", m.spinner.View()) }
+	if m.alerts == nil || len(m.alerts.Alerts) == 0 { return "No active marine alerts." }
 	return formatAlerts(m.alerts)
 }
 
-
-// formatWind formats wind data for display
 func formatWind(wind models.WindData) string {
 	if wind.SpeedMin == wind.SpeedMax {
-		if wind.HasGust {
-			return fmt.Sprintf("%s %0.f kt, gusts %0.f kt",
-				wind.Direction, wind.SpeedMin, wind.GustSpeed)
-		}
+		if wind.HasGust { return fmt.Sprintf("%s %0.f kt, gusts %0.f kt", wind.Direction, wind.SpeedMin, wind.GustSpeed) }
 		return fmt.Sprintf("%s %.0f kt", wind.Direction, wind.SpeedMin)
 	}
-
-	if wind.HasGust {
-		return fmt.Sprintf("%s %.0f-%.0f kt, gusts %.0f kt",
-			wind.Direction, wind.SpeedMin, wind.SpeedMax, wind.GustSpeed)
-	}
+	if wind.HasGust { return fmt.Sprintf("%s %.0f-%.0f kt, gusts %.0f kt", wind.Direction, wind.SpeedMin, wind.SpeedMax, wind.GustSpeed) }
 	return fmt.Sprintf("%s %.0f-%.0f kt", wind.Direction, wind.SpeedMin, wind.SpeedMax)
 }
 
-// formatSeas formats sea state for display
 func formatSeas(seas models.SeaState) string {
-	if seas.HeightMin == seas.HeightMax {
-		return fmt.Sprintf("%.0f ft", seas.HeightMin)
-	}
+	if seas.HeightMin == seas.HeightMax { return fmt.Sprintf("%.0f ft", seas.HeightMin) }
 	return fmt.Sprintf("%.0f-%.0f ft", seas.HeightMin, seas.HeightMax)
 }
 
-// formatWeather renders the current weather conditions
 func formatWeather(current *models.MarineConditions, forecast *models.ThreeDayForecast) string {
-	if current == nil && forecast == nil {
-		return mutedStyle.Render("No weather data available")
-	}
-
+	if current == nil && forecast == nil { return mutedStyle.Render("No weather data available") }
 	var lines []string
-
-	// Current conditions
 	if current != nil && forecast != nil && len(forecast.Periods) > 0 {
-		periodStyle := lipgloss.NewStyle().
-			Foreground(colorSecondary).
-			Bold(true)
-		lines = append(lines, periodStyle.Render(forecast.Periods[0].PeriodName))
-
-		if current.Wind.Direction != "" {
-			windLabel := labelStyle.Render("Wind: ")
-			windValue := valueStyle.Render(formatWind(current.Wind))
-			lines = append(lines, windLabel+windValue)
-		}
-
-		if current.Seas.HeightMin > 0 || current.Seas.HeightMax > 0 {
-			seasLabel := labelStyle.Render("Seas: ")
-			seasValue := valueStyle.Render(formatSeas(current.Seas))
-			lines = append(lines, seasLabel+seasValue)
-		}
-
-		if len(current.Seas.Components) > 0 {
-			for _, wave := range current.Seas.Components {
-				waveText := fmt.Sprintf("  %s %.0f ft at %d sec", wave.Direction, wave.Height, wave.Period)
-				lines = append(lines, mutedStyle.Render(waveText))
-			}
-		}
+		lines = append(lines, lipgloss.NewStyle().Foreground(colorSecondary).Bold(true).Render(forecast.Periods[0].PeriodName))
+		if current.Wind.Direction != "" { lines = append(lines, labelStyle.Render("Wind: ") + valueStyle.Render(formatWind(current.Wind))) }
+		if current.Seas.HeightMin > 0 || current.Seas.HeightMax > 0 { lines = append(lines, labelStyle.Render("Seas: ") + valueStyle.Render(formatSeas(current.Seas))) }
+		for _, wave := range current.Seas.Components { lines = append(lines, mutedStyle.Render(fmt.Sprintf("  %s %.0f ft at %d sec", wave.Direction, wave.Height, wave.Period))) }
 	}
-
-	// Forecast
 	if forecast != nil && len(forecast.Periods) > 1 {
 		lines = append(lines, "", labelStyle.Render("📅 3-Day Forecast:"))
-
-		maxPeriods := 6
-		if len(forecast.Periods)-1 < maxPeriods {
-			maxPeriods = len(forecast.Periods) - 1
-		}
-
-		for i := 1; i <= maxPeriods; i++ {
-			period := forecast.Periods[i]
-			periodName := valueStyle.Render(period.PeriodName + ":")
-			windSeas := mutedStyle.Render(fmt.Sprintf("%s, Seas %s",
-				formatWind(period.Wind),
-				formatSeas(period.Seas)))
-			lines = append(lines, fmt.Sprintf("  %s %s", periodName, windSeas))
+		max := 6
+		if len(forecast.Periods)-1 < max { max = len(forecast.Periods)-1 }
+		for i := 1; i <= max; i++ {
+			p := forecast.Periods[i]
+			lines = append(lines, fmt.Sprintf("  %s %s", valueStyle.Render(p.PeriodName+":"), mutedStyle.Render(fmt.Sprintf("%s, Seas %s", formatWind(p.Wind), formatSeas(p.Seas)))))
 		}
 	}
-
 	return strings.Join(lines, "\n")
 }
 
-// formatAlerts renders active marine alerts
 func formatAlerts(alerts *models.AlertData) string {
-	if alerts == nil {
-		return mutedStyle.Render("No alert data available")
-	}
-
-	activeAlerts := make([]models.Alert, 0)
-	for _, alert := range alerts.Alerts {
-		if alert.IsActive() && alert.IsMarine() {
-			activeAlerts = append(activeAlerts, alert)
-		}
-	}
-
-	if len(activeAlerts) == 0 {
-		return successStyle.Bold(true).Render("✓ No active marine alerts")
-	}
-
+	if alerts == nil { return mutedStyle.Render("No alert data available") }
+	activedAlerts := make([]models.Alert, 0)
+	for _, a := range alerts.Alerts { if a.IsActive() && a.IsMarine() { activedAlerts = append(activedAlerts, a) } }
+	if len(activedAlerts) == 0 { return successStyle.Bold(true).Render("✓ No active marine alerts") }
 	var lines []string
-	for i, alert := range activeAlerts {
-		if i > 0 {
-			lines = append(lines, "")
-		}
-
-		alertStyle := getAlertStyle(alert.Severity)
-		lines = append(lines, alertStyle.Render(fmt.Sprintf("️%s", alert.Event)))
-		lines = append(lines, valueStyle.Render(alert.Headline))
-
-		expiresLabel := labelStyle.Render("Expires: ")
-		expiresValue := mutedStyle.Render(alert.Expires.Format("Jan 2, 3:04 PM"))
-		lines = append(lines, expiresLabel+expiresValue)
+	for i, a := range activedAlerts {
+		if i > 0 { lines = append(lines, "") }
+		lines = append(lines, getAlertStyle(a.Severity).Render(fmt.Sprintf("️%s", a.Event)))
+		lines = append(lines, valueStyle.Render(a.Headline))
+		lines = append(lines, labelStyle.Render("Expires: ") + mutedStyle.Render(a.Expires.Format("Jan 2, 3:04 PM")))
 	}
-
 	return strings.Join(lines, "\n")
 }
 
-// getAlertStyle returns the appropriate style for an alert severity
-func getAlertStyle(severity models.AlertSeverity) lipgloss.Style {
-	switch severity {
-	case models.SeverityExtreme:
-		return alertExtremeStyle
-	case models.SeveritySevere:
-		return alertSevereStyle
-	case models.SeverityModerate:
-		return alertModerateStyle
-	case models.SeverityMinor:
-		return alertMinorStyle
-	default:
-		return valueStyle
+func getAlertStyle(s models.AlertSeverity) lipgloss.Style {
+	switch s {
+	case models.SeverityExtreme: return alertExtremeStyle
+	case models.SeveritySevere: return alertSevereStyle
+	case models.SeverityModerate: return alertModerateStyle
+	case models.SeverityMinor: return alertMinorStyle
+	default: return valueStyle
 	}
 }

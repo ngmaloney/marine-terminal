@@ -67,7 +67,7 @@ func TestFetchAllTideStations(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"stations": [{"id": "1", "name": "Station 1", "lat": "10.0", "lng": "-10.0", "state": "MA"}]}`)
+		_, _ = io.WriteString(w, `{"stations": [{"id": "1", "name": "Station 1", "lat": 10.0, "lng": -10.0, "state": "MA"}]}`)
 	}))
 	defer server.Close()
 
@@ -95,8 +95,8 @@ func TestBuildStationsDatabase(t *testing.T) {
 	defer db.Close()
 
 	stations := []Station{
-		{ID: "1", Name: "Station One", State: "MA", Latitude: "10.0", Longitude: "-10.0"},
-		{ID: "2", Name: "Station Two", State: "CA", Latitude: "20.0", Longitude: "-20.0"},
+		{ID: "1", Name: "Station One", State: "MA", Latitude: 10.0, Longitude: -10.0},
+		{ID: "2", Name: "Station Two", State: "CA", Latitude: 20.0, Longitude: -20.0},
 	}
 
 	err = buildStationsDatabase(db, stations, nil)
@@ -134,7 +134,7 @@ func TestProvisionStationsDatabase(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"stations": [{"id": "TEST1", "name": "Test Station", "lat": "1.0", "lng": "-1.0", "state": "TX"}]}`)
+		_, _ = io.WriteString(w, `{"stations": [{"id": "TEST1", "name": "Test Station", "lat": 1.0, "lng": -1.0, "state": "TX"}]}`)
 	}))
 	defer server.Close()
 

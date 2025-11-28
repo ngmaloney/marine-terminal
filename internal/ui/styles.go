@@ -48,6 +48,10 @@ var (
 			Foreground(lipgloss.Color("#FFFFFF"))
 
 	// Alert severity styles
+	alertDangerStyle = lipgloss.NewStyle().
+				Foreground(colorDanger).
+				Bold(true)
+
 	alertExtremeStyle = lipgloss.NewStyle().
 				Foreground(colorDanger).
 				Bold(true)

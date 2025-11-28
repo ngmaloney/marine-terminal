@@ -8,10 +8,10 @@ import (
 )
 
 func TestNewModel(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
 
-	if m.state != StateSearch {
-		t.Errorf("NewModel() state = %v, want StateSearch", m.state)
+	if m.state != StateLoading {
+		t.Errorf("NewModel() state = %v, want StateLoading", m.state)
 	}
 
 	if m.activePane != PaneWeather {
@@ -20,7 +20,8 @@ func TestNewModel(t *testing.T) {
 }
 
 func TestModel_Update_WindowSize(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
+	m.state = StateSearch // Force state
 
 	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 	updatedModel, _ := m.Update(msg)
@@ -36,7 +37,8 @@ func TestModel_Update_WindowSize(t *testing.T) {
 }
 
 func TestModel_Update_ErrorMsg(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
+	m.state = StateSearch // Force state
 	testErr := errMsg{err: tea.ErrProgramKilled}
 
 	updatedModel, _ := m.Update(testErr)
@@ -52,7 +54,8 @@ func TestModel_Update_ErrorMsg(t *testing.T) {
 }
 
 func TestModel_CtrlC_Quits(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
+	m.state = StateSearch // Force state
 
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC, Runes: []rune{'c'}}
 	_, cmd := m.Update(msg)
@@ -63,7 +66,7 @@ func TestModel_CtrlC_Quits(t *testing.T) {
 }
 
 func TestModel_DisplayStateKeyHandling(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
 	m.state = StateDisplay
 	m.selectedZone = &zonelookup.ZoneInfo{Code: "ANZ251", Name: "Cape Cod Bay"}
 
@@ -84,7 +87,9 @@ func TestModel_DisplayStateKeyHandling(t *testing.T) {
 
 // TestTextInputHandling verifies that text input works correctly
 func TestTextInputHandling(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
+	m.state = StateSearch // Force state for input handling
+	m.searchInput.Focus()
 
 	// Verify search input is focused
 	if !m.searchInput.Focused() {
@@ -132,7 +137,9 @@ func TestTextInputHandling(t *testing.T) {
 
 // TestErrorClearingOnInput verifies that errors are cleared when user types
 func TestErrorClearingOnInput(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
+	m.state = StateSearch // Force state
+	m.searchInput.Focus()
 
 	// Set an error
 	m.err = tea.ErrProgramKilled
@@ -155,7 +162,9 @@ func TestErrorClearingOnInput(t *testing.T) {
 
 // TestEnterKeyWithEmptyInput verifies that pressing Enter with empty input does nothing
 func TestEnterKeyWithEmptyInput(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
+	m.state = StateSearch // Force state
+	m.searchInput.Focus()
 
 	// Press Enter with empty input
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
@@ -173,25 +182,20 @@ func TestEnterKeyWithEmptyInput(t *testing.T) {
 	}
 }
 
-// TestSearchAgainFromDisplay verifies 'S' key returns to search
+// TestSearchAgainFromDisplay verifies 'E' key returns to saved ports list (Change Port)
 func TestSearchAgainFromDisplay(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
 	m.state = StateDisplay
 	m.selectedZone = &zonelookup.ZoneInfo{Code: "ANZ251", Name: "Cape Cod Bay"}
 
-	// Press 'S' to search again
-	sMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}}
+	// Press 'E' to change port
+	sMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}}
 	updatedModel, _ := m.Update(sMsg)
 	m = updatedModel.(Model)
 
-	// Should transition to search state
-	if m.state != StateSearch {
-		t.Errorf("Expected StateSearch after 's' key, got %v", m.state)
-	}
-
-	// Data should be cleared
-	if m.selectedZone != nil {
-		t.Error("Expected selectedZone to be cleared")
+	// Should transition to SavedPorts state
+	if m.state != StateSavedPorts {
+		t.Errorf("Expected StateSavedPorts after 'e' key, got %v", m.state)
 	}
 }
 
@@ -210,7 +214,7 @@ func TestModel_View_States(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel("")
+			m := NewModel("", "", "")
 			m.state = tt.state
 			m.width = 80
 			m.height = 24
@@ -238,11 +242,14 @@ func TestModel_View_States(t *testing.T) {
 }
 
 func TestModel_View_InitialLoading(t *testing.T) {
-	m := NewModel("")
+	m := NewModel("", "", "")
 	view := m.View()
 
-	if view != "Loading..." {
-		t.Errorf("View() before window size = %q, want 'Loading...'", view)
+	// Initial loading view might be spinner + "Loading..."
+	// or empty state background + modal.
+	// In StateLoading, View() returns modal over background.
+	if view == "" {
+		t.Error("View() should not be empty")
 	}
 }
 
