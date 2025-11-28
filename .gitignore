@@ -1,5 +1,5 @@
 # Binaries
-marine-terminal
+/marine-terminal
 *.exe
 *.exe~
 *.dll

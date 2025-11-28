@@ -3,6 +3,7 @@ module github.com/ngmaloney/marine-terminal
 go 1.24.2
 
 require (
+	github.com/NimbleMarkets/ntcharts v0.3.1
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -11,7 +12,6 @@ require (
 )
 
 require (
-	github.com/NimbleMarkets/ntcharts v0.3.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.3.1 // indirect
