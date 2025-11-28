@@ -92,4 +92,11 @@ var (
 			BorderForeground(colorBorder).
 			Padding(1, 2).
 			MarginBottom(1)
+
+	// Modal styles
+	modalStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorPrimary).
+			Padding(1, 2).
+			Width(60)
 )
