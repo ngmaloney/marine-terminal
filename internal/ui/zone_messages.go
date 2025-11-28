@@ -61,7 +61,8 @@ func findNearbyZones(lat, lon float64) tea.Cmd {
 // findNearestTideStation finds the nearest tide station to a location
 func findNearestTideStation(lat, lon float64) tea.Cmd {
 	return func() tea.Msg {
-		stations, err := stations.FindNearbyStations(database.DBPath(), lat, lon, 100.0)
+		// Use 30-mile radius to find truly nearby stations (reduced from 100)
+		stations, err := stations.FindNearbyStations(database.DBPath(), lat, lon, 30.0)
 		return tideStationFoundMsg{stations: stations, err: err}
 	}
 }

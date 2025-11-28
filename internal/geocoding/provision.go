@@ -179,14 +179,14 @@ func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) er
 			continue // Skip invalid records
 		}
 
-		// CSV format: Zipcode,ZipCodeType,City,State,LocationType,Lat,Long,...
+		// CSV format: code,city,state,county,area_code,lat,lon
 		if len(record) < 7 {
 			continue
 		}
 
 		zipcode := record[0]
-		city := record[2]
-		state := record[3]
+		city := record[1]
+		state := record[2]
 
 		lat, err := strconv.ParseFloat(record[5], 64)
 		if err != nil {
