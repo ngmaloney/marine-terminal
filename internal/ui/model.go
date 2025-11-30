@@ -648,6 +648,10 @@ func (m Model) handleZoneList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if keyMsg.String() == "s" || keyMsg.Type == tea.KeyEsc {
+			if m.selectedZone != nil {
+				m.state = StateDisplay
+				return m, nil
+			}
 			m.state = StateSearch
 			m.searchInput.Focus()
 			return m, textinput.Blink

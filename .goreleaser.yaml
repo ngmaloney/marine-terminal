@@ -50,7 +50,6 @@ archives:
     files:
       - README.md
       - LICENSE*
-      - testdata/uszips.csv
 
 checksum:
   name_template: 'checksums.txt'
@@ -85,6 +84,7 @@ release:
     name: marine-terminal
   draft: false
   prerelease: auto
+  replace_existing_artifacts: true
   name_template: "v{{.Version}}"
   header: |
     ## Marine Terminal v{{.Version}}
@@ -98,8 +98,7 @@ release:
     Download the appropriate binary for your platform from the assets below.
 
     ### Notes
-    - The application includes bundled zipcode data (~6MB)
-    - Marine zones and tide stations are downloaded automatically on first run
+    - Zipcode data, marine zones, and tide stations are downloaded automatically on first run
     - No additional dependencies required
 
 # Homebrew tap (optional - can enable later)

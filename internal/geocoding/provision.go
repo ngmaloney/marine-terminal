@@ -6,37 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 
 	_ "modernc.org/sqlite"
 )
-
-// getZipcodeCSVPath returns the path to the bundled zipcode CSV file
-// It looks for testdata/uszips.csv relative to the module root
-func getZipcodeCSVPath() string {
-	// Try current directory first (for running from repo root)
-	path := "testdata/uszips.csv"
-	if _, err := os.Stat(path); err == nil {
-		return path
-	}
-
-	// Try relative to this source file location (for tests)
-	_, filename, _, ok := runtime.Caller(0)
-	if ok {
-		// Get the repo root by going up from internal/geocoding/
-		repoRoot := filepath.Join(filepath.Dir(filename), "..", "..")
-		path = filepath.Join(repoRoot, "testdata", "uszips.csv")
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-
-	// Fall back to original path
-	return "testdata/uszips.csv"
-}
 
 // NeedsProvisioning checks if the zipcode database needs to be provisioned
 func NeedsProvisioning(dbPath string) (bool, error) {
@@ -57,7 +33,7 @@ func NeedsProvisioning(dbPath string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("checking for zipcodes table: %w", err)
 	}
-	
+
 	return count == 0, nil
 }
 
@@ -66,7 +42,7 @@ func ProvisionZipcodeDatabase(dbPath string) error {
 	return ProvisionZipcodeDatabaseWithProgress(dbPath, nil)
 }
 
-// ProvisionZipcodeDatabaseWithProgress builds the zipcode table from bundled CSV data
+// ProvisionZipcodeDatabaseWithProgress builds the zipcode table from downloaded CSV data
 func ProvisionZipcodeDatabaseWithProgress(dbPath string, progressChan chan<- string) error {
 	needs, err := NeedsProvisioning(dbPath)
 	if err != nil {
@@ -92,17 +68,23 @@ func ProvisionZipcodeDatabaseWithProgress(dbPath string, progressChan chan<- str
 		return fmt.Errorf("creating data directory: %w", err)
 	}
 
-	// Get path to bundled CSV
-	csvPath := getZipcodeCSVPath()
+	// Download CSV
+	url := "https://raw.githubusercontent.com/ngmaloney/marine-terminal/5109f78ca2f1a928ad0d241f93ed51e0306fa54d/testdata/uszips.csv"
+	sendProgress(fmt.Sprintf("Downloading zipcode data from %s...", url))
 
-	// Verify bundled CSV exists
-	if _, err := os.Stat(csvPath); os.IsNotExist(err) {
-		return fmt.Errorf("bundled zipcode data not found at %s", csvPath)
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("downloading zipcode data: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status: %s", resp.Status)
 	}
 
-	// Build database from bundled CSV
-	sendProgress("Building zipcode database from bundled data...")
-	if err := buildZipcodeDatabase(csvPath, dbPath, progressChan); err != nil {
+	// Build database from downloaded CSV
+	sendProgress("Building zipcode database from downloaded data...")
+	if err := buildZipcodeDatabase(resp.Body, dbPath, progressChan); err != nil {
 		return fmt.Errorf("building database: %w", err)
 	}
 
@@ -110,8 +92,8 @@ func ProvisionZipcodeDatabaseWithProgress(dbPath string, progressChan chan<- str
 	return nil
 }
 
-// buildZipcodeDatabase creates a SQLite database from the CSV file
-func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) error {
+// buildZipcodeDatabase creates a SQLite database from the CSV data
+func buildZipcodeDatabase(csvData io.Reader, dbPath string, progressChan chan<- string) error {
 	// Open database
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -142,14 +124,7 @@ func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) er
 		return fmt.Errorf("creating indexes: %w", err)
 	}
 
-	// Open CSV file
-	file, err := os.Open(csvPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
+	reader := csv.NewReader(csvData)
 
 	// Skip header
 	_, err = reader.Read()
@@ -200,8 +175,7 @@ func buildZipcodeDatabase(csvPath, dbPath string, progressChan chan<- string) er
 
 		_, err = tx.Stmt(stmt).Exec(zipcode, city, state, lat, lon)
 		if err != nil {
-			continue
-		}
+			continue		}
 
 		count++
 		if count%5000 == 0 {

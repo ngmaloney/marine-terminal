@@ -3,6 +3,7 @@ package geocoding
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/ngmaloney/marine-terminal/internal/database"
@@ -84,11 +85,14 @@ func lookupZipcodeInDB(db *sql.DB, zipcode string) (*Location, error) {
 
 // lookupCityStateInDB looks up a city and state in the provided database connection
 func lookupCityStateInDB(db *sql.DB, city, state string) (*Location, error) {
+	city = strings.ToLower(city)
+	state = strings.ToLower(state)
+
 	var zipcode, foundCity, foundState string
 	var lat, lon float64
 
 	err := db.QueryRow(
-		"SELECT zipcode, city, state, latitude, longitude FROM zipcodes WHERE city = ? AND state = ? ORDER BY zipcode LIMIT 1",
+		"SELECT zipcode, city, state, latitude, longitude FROM zipcodes WHERE LOWER(city) = ? AND LOWER(state) = ? ORDER BY zipcode LIMIT 1",
 		city, state,
 	).Scan(&zipcode, &foundCity, &foundState, &lat, &lon)
 
