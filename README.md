@@ -2,7 +2,7 @@
 
 A terminal-based application for displaying NOAA weather and tide information for US marine ports.
 
-![Marine Terminal Screenshot](assets/screenshot.png)
+![Marine Terminal Screenshot](assets/demo.gif)
 
 ## Features
 
